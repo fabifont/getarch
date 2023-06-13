@@ -1,0 +1,36 @@
+[flake8]
+exclude =
+    .git,
+    __pycache__,
+    build,
+    dist
+max-line-length = 88
+max-complexity = 10
+select =
+    # flake8 defaults
+    C,E,F,W,B,
+    # flake8-bugbear
+    B9,
+    # flake8-docstrings
+    D,
+    # flake8-annotations
+    T4
+ignore =
+    # Whitespace before ':' which contradicts PEP 8
+    E203,
+    # Too many leading '#' for block comments
+    E266,
+    # Line is too long (default is set at 79 characters)
+    E501,
+    # Line break occurs before a binary operator. This warning is not PEP 8 compliant
+    W503,
+    # Missing whitespace after ',', ';', or ':'
+    E231,
+    # Indentation is not a multiple of four
+    E111,
+    # Using a bare except: clause (suggests specifying exceptions)
+    B907,
+    # Blank line after a function or method docstring
+    D202,
+    # Docstrings
+    D100, D101, D102, D103, D104, D105, D107, D109

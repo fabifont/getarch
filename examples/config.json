@@ -1,0 +1,16 @@
+{
+    "disk": "/dev/sda",
+    "clean_disk": false,
+    "filesystem": "btrfs",
+    "root_password": "rootpw",
+    "luks_password": "lukspw",
+    "hostname": "arch",
+    "lang": "en_US.UTF-8",
+    "locale": "en_US.UTF-8 UTF-8",
+    "timezone": "Europe/Rome",
+    "keymap": "us-acentos",
+    "packages": ["base", "base-devel", "linux", "linux-firmware", "linux-headers", "nano", "sudo", "networkmanager", "btrfs-progs"],
+    "mkinitcpio_hooks": ["base", "systemd", "sd-vconsole", "autodetect", "modconf", "block", "filesystems", "keyboard", "sd-encrypt", "fsck"],
+    "services": ["NetworkManager"],
+    "timers": ["fstrim"]
+}

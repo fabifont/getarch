@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  getarch-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    privileged: true
+    devices:
+      - "/dev/kvm:/dev/kvm"
+    environment:
+      REPO_URL: https://github.com/fabifont/getarch
+      RUNNER_NAME: getarch-runner
+      RUNNER_TOKEN: ${RUNNER_TOKEN}
+      RUNNER_WORKDIR: /tmp/runner/work
+      RUNNER_SCOPE: "repo"
+      LABELS: linux,x64,gpu
+    security_opt:
+      # needed on SELinux systems to allow docker container to manage other docker containers
+      - label:disable
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "/tmp/getarch-runner:/tmp/runner"
+      # note: a quirk of docker-in-docker is that this path
+      # needs to be the same path on host and inside the container,
+      # docker mgmt cmds run outside of docker but expect the paths from within

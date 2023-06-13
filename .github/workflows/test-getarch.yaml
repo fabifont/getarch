@@ -1,0 +1,90 @@
+name: Test getarch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**.py"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**.py"
+  workflow_dispatch:
+
+jobs:
+  test-getarch:
+    runs-on: self-hosted
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v3
+
+    - name: Setup python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install poetry
+      run: curl -sSL https://install.python-poetry.org | python3 -
+
+    - name: Install dependencies
+      run: /root/.local/bin/poetry config virtualenvs.create false && /root/.local/bin/poetry install --no-interaction --no-ansi
+
+    - name: Generate executable
+      run: pyinstaller --onefile bin/main.py --name=getarch
+
+    - name: Install apt dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y socat sshpass
+
+    - name: Download Arch Linux ISO
+      run: |
+        if [[ ! -f "arch.iso" ]] || [[ -n "$(find arch.iso -daystart -mtime +7)" ]]; then
+          curl -v -sSL0 -C - -o arch.iso https://packages.oth-regensburg.de/archlinux/iso/latest/archlinux-x86_64.iso
+        fi
+
+    - name: Create Arch Linux VM image
+      run: rm -f arch.qcow2 && qemu-img create -f qcow2 arch.qcow2 8G
+
+    - name: Boot Arch Linux VM and run getarch
+      id: qemu
+      run: |
+        qemu-system-x86_64 \
+          -enable-kvm \
+          -cdrom arch.iso \
+          -boot d \
+          -m 2G \
+          -hda arch.qcow2 \
+          -net user,hostfwd=tcp::2222-:22 \
+          -net nic \
+          -display none \
+          -nographic \
+          -no-reboot \
+          -vga none \
+          -cpu host \
+          -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
+          -global isa-debugcon.iobase=0x402 \
+          -debugcon file:qemu-debug.log \
+          -bios /usr/share/ovmf/OVMF.fd \
+          &
+        sleep 120
+        bash test_resources/passwd.sh
+        sleep 5
+        ssh-keygen -f "/root/.ssh/known_hosts" -R "[localhost]:2222" || true
+        sshpass -p "a" scp -P 2222 -o StrictHostKeyChecking=no -r ./dist/getarch root@localhost:~
+        sshpass -p "a" scp -P 2222 -o StrictHostKeyChecking=no -r ./examples/config.json root@localhost:~
+        sshpass -p "a" ssh -p 2222 -o StrictHostKeyChecking=no root@localhost "passwd --delete root && ./getarch -c config.json --test 2>&1 | tee getarch.log && echo 'a\na\n' | passwd"
+        sshpass -p "a" scp -P 2222 -o StrictHostKeyChecking=no root@localhost:~/getarch.log .
+        sshpass -p "a" ssh -p 2222 -o StrictHostKeyChecking=no root@localhost "shutdown -h now"
+      timeout-minutes: 30
+
+    - name: Upload log
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: logs
+        path: |
+          qemu.log
+          getarch.log
