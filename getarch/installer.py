@@ -24,6 +24,7 @@ class Installer:
     def __init__(self, test: bool = False) -> None:
         self.system_data = SystemData()
         self.test = test
+        self.boot_rootflags = ""
 
     def install(self, user_data: UserData) -> None:
         self.user_data = user_data
@@ -31,7 +32,7 @@ class Installer:
             self.clean_disk()
         self.format_disk()
         self.setup_luks()
-        self.setup_btrfs()
+        self.setup_filesystem()
         self.setup_boot()
         self.install_base_system()
         self.setup_system()
@@ -106,15 +107,36 @@ class Installer:
             cmd_input=f"{self.user_data.luks_password}\n",
         )
 
+    def setup_filesystem(self) -> None:
+        match self.user_data.filesystem:
+            case "ext4":
+                self.setup_ext4()
+            case "btrfs":
+                self.boot_rootflags = "rootflags=subvol=@"
+                self.setup_btrfs()
+            case _:
+                raise NotImplementedError(
+                    f"Filesystem {self.user_data.filesystem} not implemented"
+                )
+
+    def setup_ext4(self) -> None:
+        Command.run(
+            f"mkfs.{self.user_data.filesystem} -L system /dev/mapper/system",
+            cmd_input="y\n",
+        )
+        Command.run(f"mount -t {self.user_data.filesystem} LABEL=system /mnt")
+
     def setup_btrfs(self) -> None:
+        Command.run(
+            f"mkfs.{self.user_data.filesystem} --label system /dev/mapper/system"
+        )
+        Command.run(f"mount -t {self.user_data.filesystem} LABEL=system /mnt")
+
         subvol_mountpoint_mapper = {
             "@": "",
             "@home": "/home",
             "@snapshots": "/.snapshots",
         }
-
-        Command.run("mkfs.btrfs --label system /dev/mapper/system")
-        Command.run("mount -t btrfs LABEL=system /mnt")
 
         for sv in subvol_mountpoint_mapper.keys():
             Command.run(f"btrfs sub create /mnt/{sv}")
@@ -205,12 +227,21 @@ class Installer:
             "blkid /dev/disk/by-partlabel/cryptsystem -s UUID -o value"
         ).stdout
 
+        options = [
+            f"rd.luks.name={uuid}=system",
+            "rd.luks.allow-discards",
+            "root=/dev/mapper/system",
+            self.boot_rootflags,
+            "rd.luks.options=discard",
+            "rw",
+        ]
+
         arch_entry = (
             "title Arch Linux\n"
             "linux /vmlinuz-linux\n"
             f"{load_microcode}"
             "initrd /initramfs-linux.img\n"
-            f"options rd.luks.name={uuid}=system rd.luks.allow-discards root=/dev/mapper/system rootflags=subvol=@ rd.luks.options=discard rw"  # noqa: B950
+            f"options {' '.join(filter(bool, options))}"
         )
 
         with open("/mnt/boot/loader/entries/arch.conf", "w") as f:

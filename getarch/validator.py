@@ -23,7 +23,7 @@ class Validator:
     def __init__(self, system_data: SystemData, user_data: UserData) -> None:
         self.system_data = system_data
         self.user_data = user_data
-        self.supported_filesystems = ["btrfs"]
+        self.supported_filesystems = ["btrfs", "ext4"]
 
     def validate(self) -> UserData:
         try:

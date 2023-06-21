@@ -10,7 +10,7 @@
     "timezone": "Europe/Rome",
     "keymap": "us-acentos",
     "packages": ["base", "base-devel", "linux", "linux-firmware", "linux-headers", "nano", "sudo", "networkmanager", "btrfs-progs"],
-    "mkinitcpio_hooks": ["base", "systemd", "sd-vconsole", "autodetect", "modconf", "block", "filesystems", "keyboard", "sd-encrypt", "fsck"],
+    "mkinitcpio_hooks": ["base", "systemd", "autodetect", "modconf", "block", "sd-vconsole", "keyboard", "sd-encrypt", "filesystems", "fsck"],
     "services": ["NetworkManager"],
     "timers": ["fstrim"]
 }

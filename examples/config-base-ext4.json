@@ -1,0 +1,16 @@
+{
+    "disk": "/dev/sda",
+    "clean_disk": false,
+    "filesystem": "ext4",
+    "root_password": "rootpw",
+    "luks_password": "lukspw",
+    "hostname": "arch",
+    "lang": "en_US.UTF-8",
+    "locale": "en_US.UTF-8 UTF-8",
+    "timezone": "Europe/Rome",
+    "keymap": "us-acentos",
+    "packages": ["base", "base-devel", "linux", "linux-firmware", "linux-headers", "nano", "sudo", "networkmanager"],
+    "mkinitcpio_hooks": ["base", "systemd", "autodetect", "modconf", "block", "sd-vconsole", "keyboard", "sd-encrypt", "filesystems", "fsck"],
+    "services": ["NetworkManager"],
+    "timers": ["fstrim"]
+}
