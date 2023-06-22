@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "getarch"
-version = "1.0.0"
+version = "1.0.1"
 description = "A simple way to install archlinux"
 authors = ["fabifont <fabio.fontana@mailbox.org>"]
 license = "GPL-3.0"

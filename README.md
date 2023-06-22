@@ -16,7 +16,7 @@ Although **getarch** simplifies the installation process, it is not designed for
 
 ## Current limitations and future plans
 
-At present, **getarch** operates through a configuration file only and supports only the Btrfs filesystem and a fixed partition scheme. However, I have plans to enhance its functionality:
+At present, **getarch** operates through a configuration file only and supports only btrfs and ext4 filesystem and a fixed partition scheme. However, I have plans to enhance its functionality:
 
 * Support for additional filesystems and partition schemes will be added.
 * An option for fully custom partitioning is planned.

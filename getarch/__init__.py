@@ -19,7 +19,7 @@ from .installer import Installer
 from .parser import Parser
 from .validator import Validator
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __all__ = ["Installer", "Parser", "Validator"]
 
 logging.basicConfig(level=logging.DEBUG)
