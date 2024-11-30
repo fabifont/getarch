@@ -41,7 +41,6 @@ class Validator:
             "disk": self.user_data.disk,
             "filesystem": self.user_data.filesystem,
             "root_password": self.user_data.root_password,
-            "luks_password": self.user_data.luks_password,
             "hostname": self.user_data.hostname,
             "lang": self.user_data.lang,
             "locale": self.user_data.locale,
@@ -52,6 +51,10 @@ class Validator:
         for name, value in str_variables.items():
             if not value:
                 raise ValueError(f"{name} cannot be empty")
+        
+        if self.user_data.luks_password == "":
+            self.user_data.luks_password = None
+
         if self.user_data.lang not in self.system_data.langs:
             raise ValueError(f"{self.user_data.lang} is not a valid lang")
         if self.user_data.locale not in self.system_data.locales:
