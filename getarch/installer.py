@@ -31,8 +31,11 @@ class Installer:
         if self.user_data.clean_disk:
             self.clean_disk()
         self.format_disk()
-        self.setup_luks()
-        self.setup_filesystem()
+        if self.user_data.luks_password:
+            self.setup_luks()
+            self.setup_filesystem(encrypted=True)
+        else:
+            self.setup_filesystem(encrypted=False)
         self.setup_boot()
         self.install_base_system()
         self.setup_system()
@@ -87,14 +90,24 @@ class Installer:
 
     def format_disk(self) -> None:
         Command.run(f"sgdisk --zap-all {self.user_data.disk}")
-        Command.run(
-            (
-                "sgdisk --clear"
-                " --new=1:0:+512MiB --typecode=1:ef00 --change-name=1:EFI"
-                " --new=2:0:0 --typecode=2:8300 --change-name=2:cryptsystem"
-                f" {self.user_data.disk}"
+        if self.user_data.luks_password:
+            Command.run(
+                (
+                    "sgdisk --clear"
+                    " --new=1:0:+512MiB --typecode=1:ef00 --change-name=1:EFI"
+                    " --new=2:0:0 --typecode=2:8300 --change-name=2:cryptsystem"
+                    f" {self.user_data.disk}"
+                )
             )
-        )
+        else:
+            Command.run(
+                (
+                    "sgdisk --clear"
+                    " --new=1:0:+512MiB --typecode=1:ef00 --change-name=1:EFI"
+                    " --new=2:0:0 --typecode=2:8300 --change-name=2:system"
+                    f" {self.user_data.disk}"
+                )
+            )
         Command.run("mkfs.fat -F32 -n EFI /dev/disk/by-partlabel/EFI", check=False)
 
     def setup_luks(self) -> None:
@@ -107,28 +120,33 @@ class Installer:
             cmd_input=f"{self.user_data.luks_password}\n",
         )
 
-    def setup_filesystem(self) -> None:
+    def setup_filesystem(self, encrypted: bool) -> None:
+        if encrypted:
+            device = "/dev/mapper/system"
+        else:
+            device = "/dev/disk/by-partlabel/system"
+
         match self.user_data.filesystem:
             case "ext4":
-                self.setup_ext4()
+                self.setup_ext4(device)
             case "btrfs":
                 self.boot_rootflags = "rootflags=subvol=@"
-                self.setup_btrfs()
+                self.setup_btrfs(device)
             case _:
                 raise NotImplementedError(
                     f"Filesystem {self.user_data.filesystem} not implemented"
                 )
 
-    def setup_ext4(self) -> None:
+    def setup_ext4(self, device: str) -> None:
         Command.run(
-            f"mkfs.{self.user_data.filesystem} -L system /dev/mapper/system",
+            f"mkfs.{self.user_data.filesystem} -L system {device}",
             cmd_input="y\n",
         )
         Command.run(f"mount -t {self.user_data.filesystem} LABEL=system /mnt")
 
-    def setup_btrfs(self) -> None:
+    def setup_btrfs(self, device: str) -> None:
         Command.run(
-            f"mkfs.{self.user_data.filesystem} --label system /dev/mapper/system"
+            f"mkfs.{self.user_data.filesystem} --label system {device}"
         )
         Command.run(f"mount -t {self.user_data.filesystem} LABEL=system /mnt")
 
@@ -189,6 +207,11 @@ class Installer:
         Command.run("hwclock --systohc", chroot=True)
 
     def setup_initramfs(self) -> None:
+        if not self.user_data.luks_password:
+            self.user_data.mkinitcpio_hooks = [
+                hook for hook in self.user_data.mkinitcpio_hooks if hook != "sd-encrypt"
+            ]
+
         hooks = f"HOOKS=({' '.join(self.user_data.mkinitcpio_hooks)})\n"
 
         with open("/mnt/etc/mkinitcpio.conf", "w") as f:
@@ -223,25 +246,34 @@ class Installer:
             if not self.system_data.ucode
             else f"initrd /{self.system_data.ucode}.img\n"
         )
-        uuid = Command.run(
-            "blkid /dev/disk/by-partlabel/cryptsystem -s UUID -o value"
-        ).stdout
 
-        options = [
-            f"rd.luks.name={uuid}=system",
-            "rd.luks.allow-discards",
-            "root=/dev/mapper/system",
-            self.boot_rootflags,
-            "rd.luks.options=discard",
-            "rw",
-        ]
+        if self.user_data.luks_password:
+            uuid = Command.run(
+                "blkid /dev/disk/by-partlabel/cryptsystem -s UUID -o value"
+            ).stdout
+            options = [
+                f"rd.luks.name={uuid}=system",
+                "rd.luks.allow-discards",
+                "root=/dev/mapper/system",
+                self.boot_rootflags,
+                "rd.luks.options=discard",
+                "rw",
+            ]
+        else:
+            options = [
+                "root=LABEL=system",
+                self.boot_rootflags,
+                "rw",
+            ]
+
+        options_str = ' '.join(filter(bool, options))
 
         arch_entry = (
             "title Arch Linux\n"
             "linux /vmlinuz-linux\n"
             f"{load_microcode}"
             "initrd /initramfs-linux.img\n"
-            f"options {' '.join(filter(bool, options))}"
+            f"options {options_str}"
         )
 
         with open("/mnt/boot/loader/entries/arch.conf", "w") as f:

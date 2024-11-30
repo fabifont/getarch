@@ -71,7 +71,7 @@ class UserData:
     clean_disk: bool
     filesystem: str
     root_password: str
-    luks_password: str
+    luks_password: str | None
     hostname: str
     lang: str
     locale: str
@@ -88,7 +88,11 @@ class UserData:
         self.clean_disk = self.validate("clean_disk", bool)  # type: ignore
         self.filesystem = self.validate("filesystem", str)  # type: ignore
         self.root_password = self.validate("root_password", str)  # type: ignore
-        self.luks_password = self.validate("luks_password", str)  # type: ignore
+        luks_password = self.data.get("luks_password", None)
+        if luks_password:
+            self.luks_password = self.validate("luks_password", str)  # type: ignore
+        else:
+            self.luks_password = None
         self.hostname = self.validate("hostname", str)  # type: ignore
         self.lang = self.validate("lang", str)  # type: ignore
         self.locale = self.validate("locale", str)  # type: ignore
@@ -104,8 +108,8 @@ class UserData:
     ) -> list[str] | str | bool:
         try:
             parsed_type = type(self.data[key])
-            if parsed_type == list and expected_type == list[str]:
-                if not all(type(item) == str for item in self.data[key]):  # type: ignore
+            if parsed_type is list and expected_type == list[str]:
+                if not all(type(item) is str for item in self.data[key]):  # type: ignore
                     raise TypeError(
                         f"Expected {key} to be of type {expected_type}, but got {parsed_type}"
                     )
