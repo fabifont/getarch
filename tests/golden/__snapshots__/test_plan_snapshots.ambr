@@ -506,7 +506,7 @@
         "title": "Install bootloader",
         "phase": "bootloader",
         "destructive": false,
-        "description": "install systemd-boot and write loader entry",
+        "description": "install systemd-boot bootloader",
         "commands": [
           {
             "argv": [
@@ -1282,7 +1282,7 @@
         "title": "Install bootloader",
         "phase": "bootloader",
         "destructive": false,
-        "description": "install systemd-boot and write loader entry",
+        "description": "install systemd-boot bootloader",
         "commands": [
           {
             "argv": [
@@ -1748,7 +1748,7 @@
         "title": "Install bootloader",
         "phase": "bootloader",
         "destructive": false,
-        "description": "install systemd-boot and write loader entry",
+        "description": "install systemd-boot bootloader",
         "commands": [
           {
             "argv": [

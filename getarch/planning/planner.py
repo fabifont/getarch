@@ -20,7 +20,7 @@ from getarch.domain.plan import InstallPlan, PlannedStep, StepPhase
 from getarch.domain.secret import Secret
 from getarch.errors import PlanError
 from getarch.execution.command import Command
-from getarch.planning.strategies.bootloader import SystemdBootStrategy
+from getarch.planning.strategies.bootloader import build_bootloader_strategy
 from getarch.planning.strategies.encryption import build_encryption_strategy
 from getarch.planning.strategies.filesystem import build_filesystem_strategy
 from getarch.planning.strategies.initramfs import MkinitcpioStrategy
@@ -233,7 +233,7 @@ class Planner:
     ) -> PlannedStep:
         rootflags = "rootflags=subvol=@" if cfg.filesystem.kind == "btrfs" else None
         bl_spec = BootloaderSpec(
-            kind=BootloaderKind.SYSTEMD_BOOT,
+            kind=BootloaderKind(cfg.bootloader.kind),
             entry_id=cfg.bootloader.entry_id,
             timeout_seconds=cfg.bootloader.timeout_seconds,
             extra_kernel_params=tuple(cfg.bootloader.extra_kernel_params),
@@ -244,22 +244,26 @@ class Planner:
                 Secret(cfg.encryption.password) if encrypted and cfg.encryption.password else None
             ),
             mapper_name=cfg.encryption.mapper_name,
+            tpm2_unlock=cfg.encryption.tpm2_unlock,
+            fido2_unlock=cfg.encryption.fido2_unlock,
+            header_path=cfg.encryption.header_path,
+        )
+        strategy = build_bootloader_strategy(
+            bl_spec,
+            kernel=KernelSpec(kind=KernelKind(cfg.kernel.kind)),
+            microcode=microcode,
+            encryption=encryption_spec,
+            rootflags=rootflags,
+            crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
+            mount_root=mount_root,
         )
         return PlannedStep(
             id="bootloader",
             title="Install bootloader",
             phase=StepPhase.BOOTLOADER,
-            commands=SystemdBootStrategy(
-                spec=bl_spec,
-                kernel=KernelSpec(kind=KernelKind(cfg.kernel.kind)),
-                microcode=microcode,
-                encryption=encryption_spec,
-                rootflags=rootflags,
-                crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
-                mount_root=mount_root,
-            ).commands(),
+            commands=strategy.commands(),
             destructive=False,
-            description="install systemd-boot and write loader entry",
+            description=f"install {cfg.bootloader.kind} bootloader",
         )
 
     def _services_step(self, cfg: Config) -> PlannedStep:

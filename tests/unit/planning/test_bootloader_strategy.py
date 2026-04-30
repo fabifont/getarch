@@ -4,7 +4,12 @@ from getarch.domain.bootloader import BootloaderKind, BootloaderSpec
 from getarch.domain.encryption import EncryptionKind, EncryptionSpec
 from getarch.domain.kernel import KernelKind, KernelSpec, MicrocodeKind
 from getarch.domain.secret import Secret
-from getarch.planning.strategies.bootloader import SystemdBootStrategy
+from getarch.planning.strategies.bootloader import (
+    GrubStrategy,
+    SystemdBootStrategy,
+    UkiStrategy,
+    build_bootloader_strategy,
+)
 
 
 def test_bootctl_runs_outside_chroot_with_esp_path() -> None:
@@ -74,3 +79,67 @@ def test_btrfs_includes_rootflags() -> None:
     ).commands()
     flat = " ".join(arg for c in cmds for arg in c.argv) + " ".join(c.input or "" for c in cmds)
     assert "rootflags=subvol=@" in flat
+
+
+def test_grub_emits_install_and_mkconfig() -> None:
+    cmds = GrubStrategy(
+        spec=BootloaderSpec(kind=BootloaderKind.GRUB, entry_id="ARCH"),
+        kernel=KernelSpec(),
+        microcode=MicrocodeKind.NONE,
+        encryption=EncryptionSpec(kind=EncryptionKind.NONE),
+        rootflags=None,
+        crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
+        mount_root=Path("/mnt"),
+    ).commands()
+    argvs = [c.argv for c in cmds]
+    assert any(a[0] == "grub-install" and "--bootloader-id=ARCH" in a for a in argvs)
+    assert ("grub-mkconfig", "-o", "/boot/grub/grub.cfg") in argvs
+
+
+def test_grub_with_luks_enables_cryptodisk() -> None:
+    cmds = GrubStrategy(
+        spec=BootloaderSpec(kind=BootloaderKind.GRUB),
+        kernel=KernelSpec(),
+        microcode=MicrocodeKind.NONE,
+        encryption=EncryptionSpec(kind=EncryptionKind.LUKS2, password=Secret("x")),
+        rootflags=None,
+        crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
+        mount_root=Path("/mnt"),
+    ).commands()
+    flat = " ".join(arg for c in cmds for arg in c.argv) + " ".join(c.input or "" for c in cmds)
+    assert "GRUB_ENABLE_CRYPTODISK=y" in flat
+    assert "cryptdevice=/dev/disk/by-partlabel/cryptsystem:system" in flat
+
+
+def test_uki_writes_preset_and_runs_mkinitcpio() -> None:
+    cmds = UkiStrategy(
+        spec=BootloaderSpec(kind=BootloaderKind.UKI, entry_id="arch"),
+        kernel=KernelSpec(kind=KernelKind.LINUX),
+        microcode=MicrocodeKind.NONE,
+        encryption=EncryptionSpec(kind=EncryptionKind.NONE),
+        rootflags=None,
+        crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
+        mount_root=Path("/mnt"),
+    ).commands()
+    argvs = [c.argv for c in cmds]
+    assert ("mkinitcpio", "-p", "linux") in argvs
+    flat = "".join(c.input or "" for c in cmds)
+    assert "default_uki=" in flat
+    assert "/efi/EFI/Linux/arch-linux.efi" in flat
+
+
+def test_factory_dispatches_on_kind() -> None:
+    common = {
+        "kernel": KernelSpec(),
+        "microcode": MicrocodeKind.NONE,
+        "encryption": EncryptionSpec(kind=EncryptionKind.NONE),
+        "rootflags": None,
+        "crypt_partition_path": "/dev/disk/by-partlabel/cryptsystem",
+        "mount_root": Path("/mnt"),
+    }
+    sb = build_bootloader_strategy(BootloaderSpec(kind=BootloaderKind.SYSTEMD_BOOT), **common)
+    grub = build_bootloader_strategy(BootloaderSpec(kind=BootloaderKind.GRUB), **common)
+    uki = build_bootloader_strategy(BootloaderSpec(kind=BootloaderKind.UKI), **common)
+    assert isinstance(sb, SystemdBootStrategy)
+    assert isinstance(grub, GrubStrategy)
+    assert isinstance(uki, UkiStrategy)

@@ -1,4 +1,4 @@
-"""systemd-boot bootloader strategy.
+"""Bootloader strategies (systemd-boot, GRUB, UKI).
 
 Per Arch Wiki / `bootctl(1)`: ``bootctl install`` from inside ``arch-chroot``
 runs inside a pid namespace and refuses to write UEFI variables. We therefore
@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from getarch.domain.bootloader import BootloaderSpec
+from getarch.domain.bootloader import BootloaderKind, BootloaderSpec
 from getarch.domain.encryption import EncryptionKind, EncryptionSpec
 from getarch.domain.kernel import KernelSpec, MicrocodeKind
 from getarch.execution.command import Command
@@ -102,3 +102,228 @@ class SystemdBootStrategy:
         text += f"initrd /{self.kernel.initramfs_filename}\n"
         text += f"options {options}"
         return text
+
+
+@dataclass(frozen=True, slots=True)
+class GrubStrategy:
+    """Install GRUB onto the ESP and write its config.
+
+    Cmdline assembly mirrors :class:`SystemdBootStrategy` but is rendered
+    into ``/etc/default/grub`` so ``grub-mkconfig`` picks it up. ``grub-install``
+    runs in chroot because GRUB writes UEFI variables only when invoked
+    against a real EFI mount inside the target — Arch's recommendation.
+    """
+
+    spec: BootloaderSpec
+    kernel: KernelSpec
+    microcode: MicrocodeKind
+    encryption: EncryptionSpec
+    rootflags: str | None
+    crypt_partition_path: str
+    mount_root: Path
+
+    def commands(self) -> tuple[Command, ...]:
+        defaults_path = self.mount_root / "etc/default/grub"
+        cmdline = self._cmdline()
+        defaults_text = (
+            f'GRUB_DEFAULT=0\n'
+            f'GRUB_TIMEOUT={self.spec.timeout_seconds}\n'
+            f'GRUB_DISTRIBUTOR="Arch"\n'
+            f'GRUB_CMDLINE_LINUX_DEFAULT="{cmdline}"\n'
+            f'GRUB_PRELOAD_MODULES="part_gpt part_msdos"\n'
+        )
+        cmds: list[Command] = [
+            Command(
+                argv=("install", "-Dm644", "/dev/stdin", str(defaults_path)),
+                input=defaults_text,
+                description=f"write {defaults_path}",
+            ),
+            Command(
+                argv=(
+                    "grub-install",
+                    "--target=x86_64-efi",
+                    "--efi-directory=/boot",
+                    f"--bootloader-id={self.spec.entry_id}",
+                ),
+                chroot=True,
+                description="install GRUB EFI binary into ESP",
+            ),
+        ]
+        if self.encryption.kind is EncryptionKind.LUKS2:
+            # GRUB needs to know how to crypto-unlock at boot: enable cryptodisk.
+            cmds.append(
+                Command(
+                    argv=(
+                        "sh",
+                        "-c",
+                        (
+                            f"printf 'GRUB_ENABLE_CRYPTODISK=y\\n' "
+                            f">> {defaults_path}"
+                        ),
+                    ),
+                    description="enable cryptodisk in /etc/default/grub",
+                ),
+            )
+        cmds.append(
+            Command(
+                argv=("grub-mkconfig", "-o", "/boot/grub/grub.cfg"),
+                chroot=True,
+                description="render /boot/grub/grub.cfg",
+            ),
+        )
+        return tuple(cmds)
+
+    def _cmdline(self) -> str:
+        params: list[str] = []
+        if self.encryption.kind is EncryptionKind.LUKS2:
+            params.append(
+                f"cryptdevice={self.crypt_partition_path}:{self.encryption.mapper_name}",
+            )
+            params.append(f"root=/dev/mapper/{self.encryption.mapper_name}")
+            if self.encryption.header_path:
+                params.append(f"cryptheader={self.encryption.header_path}")
+            if self.encryption.tpm2_unlock:
+                params.append("rd.luks.options=tpm2-device=auto")
+            if self.encryption.fido2_unlock:
+                params.append("rd.luks.options=fido2-device=auto")
+        else:
+            params.append("root=LABEL=system")
+        if self.rootflags:
+            params.append(self.rootflags)
+        params.append("rw")
+        params.extend(self.spec.extra_kernel_params)
+        return " ".join(params)
+
+
+@dataclass(frozen=True, slots=True)
+class UkiStrategy:
+    """Unified Kernel Image strategy.
+
+    Writes a mkinitcpio preset that emits a UKI to
+    ``/boot/EFI/Linux/<entry_id>-<kernel>.efi``. Also installs systemd-boot so
+    users get a graphical boot picker when multiple UKIs exist; bootctl is
+    optional but harmless.
+    """
+
+    spec: BootloaderSpec
+    kernel: KernelSpec
+    microcode: MicrocodeKind
+    encryption: EncryptionSpec
+    rootflags: str | None
+    crypt_partition_path: str
+    mount_root: Path
+
+    def commands(self) -> tuple[Command, ...]:
+        preset_path = (
+            self.mount_root
+            / "etc/mkinitcpio.d"
+            / f"{self.kernel.kind.value}.preset"
+        )
+        cmdline_path = self.mount_root / "etc/kernel/cmdline"
+        uki_path = (
+            f"/efi/EFI/Linux/{self.spec.entry_id}-{self.kernel.kind.value}.efi"
+        )
+        preset_text = (
+            f"ALL_kver=\"/boot/{self.kernel.image_filename}\"\n"
+            f"ALL_microcode=()\n"
+            f"PRESETS=('default')\n"
+            f"default_uki=\"{uki_path}\"\n"
+            f"default_options=\"--splash /usr/share/systemd/bootctl/splash-arch.bmp\"\n"
+        )
+        cmdline_text = self._cmdline() + "\n"
+        cmds: list[Command] = [
+            Command(
+                argv=("install", "-Dm644", "/dev/stdin", str(cmdline_path)),
+                input=cmdline_text,
+                description=f"write {cmdline_path}",
+            ),
+            Command(
+                argv=("install", "-Dm644", "/dev/stdin", str(preset_path)),
+                input=preset_text,
+                description=f"write {preset_path}",
+            ),
+            Command(
+                argv=(
+                    "mkdir",
+                    "-p",
+                    str(self.mount_root / "boot/EFI/Linux"),
+                ),
+                description="create UKI output directory",
+            ),
+            Command(
+                argv=("mkinitcpio", "-p", self.kernel.kind.value),
+                chroot=True,
+                description="regenerate UKI via mkinitcpio preset",
+            ),
+            Command(
+                argv=("bootctl", f"--esp-path={self.mount_root}/boot", "install"),
+                chroot=False,
+                description="install systemd-boot loader (chains UKIs)",
+            ),
+        ]
+        return tuple(cmds)
+
+    def _cmdline(self) -> str:
+        params: list[str] = []
+        if self.encryption.kind is EncryptionKind.LUKS2:
+            params.append(
+                f"rd.luks.name=$(blkid -s UUID -o value "
+                f"{self.crypt_partition_path})={self.encryption.mapper_name}",
+            )
+            params.append(f"root=/dev/mapper/{self.encryption.mapper_name}")
+            if self.encryption.header_path:
+                params.append(f"rd.luks.options=header={self.encryption.header_path}")
+            if self.encryption.tpm2_unlock:
+                params.append("rd.luks.options=tpm2-device=auto")
+            if self.encryption.fido2_unlock:
+                params.append("rd.luks.options=fido2-device=auto")
+        else:
+            params.append("root=LABEL=system")
+        if self.rootflags:
+            params.append(self.rootflags)
+        params.append("rw")
+        params.extend(self.spec.extra_kernel_params)
+        return " ".join(params)
+
+
+def build_bootloader_strategy(
+    spec: BootloaderSpec,
+    *,
+    kernel: KernelSpec,
+    microcode: MicrocodeKind,
+    encryption: EncryptionSpec,
+    rootflags: str | None,
+    crypt_partition_path: str,
+    mount_root: Path,
+) -> SystemdBootStrategy | GrubStrategy | UkiStrategy:
+    if spec.kind is BootloaderKind.SYSTEMD_BOOT:
+        return SystemdBootStrategy(
+            spec=spec,
+            kernel=kernel,
+            microcode=microcode,
+            encryption=encryption,
+            rootflags=rootflags,
+            crypt_partition_path=crypt_partition_path,
+            mount_root=mount_root,
+        )
+    if spec.kind is BootloaderKind.GRUB:
+        return GrubStrategy(
+            spec=spec,
+            kernel=kernel,
+            microcode=microcode,
+            encryption=encryption,
+            rootflags=rootflags,
+            crypt_partition_path=crypt_partition_path,
+            mount_root=mount_root,
+        )
+    if spec.kind is BootloaderKind.UKI:
+        return UkiStrategy(
+            spec=spec,
+            kernel=kernel,
+            microcode=microcode,
+            encryption=encryption,
+            rootflags=rootflags,
+            crypt_partition_path=crypt_partition_path,
+            mount_root=mount_root,
+        )
+    raise ValueError(f"unsupported bootloader kind: {spec.kind!r}")
