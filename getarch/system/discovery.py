@@ -33,3 +33,8 @@ class PacmanProvider(Protocol):
 @runtime_checkable
 class IdentityProvider(Protocol):
     def is_root(self) -> bool: ...
+
+
+@runtime_checkable
+class IsoProvider(Protocol):
+    def is_arch_iso(self) -> bool: ...
