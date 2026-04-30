@@ -1,0 +1,1102 @@
+# serializer version: 1
+# name: test_encrypted_btrfs_plan_snapshot
+  '''
+  {
+    "version": "1",
+    "destructive": true,
+    "steps": [
+      {
+        "id": "partitioning",
+        "title": "Partition disk",
+        "phase": "partitioning",
+        "destructive": true,
+        "description": "Create GPT layout 'efi-root' on /dev/sda",
+        "commands": [
+          {
+            "argv": [
+              "sgdisk",
+              "--zap-all",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "wipe partition table"
+          },
+          {
+            "argv": [
+              "sgdisk",
+              "--new=1:0:+512MiB",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "create partition 1 (EFI, ef00)"
+          },
+          {
+            "argv": [
+              "sgdisk",
+              "--typecode=1:ef00",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "set partition 1 type to ef00"
+          },
+          {
+            "argv": [
+              "sgdisk",
+              "--change-name=1:EFI",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "label partition 1 as EFI"
+          },
+          {
+            "argv": [
+              "sgdisk",
+              "--new=2:0:0",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "create partition 2 (cryptsystem, 8300)"
+          },
+          {
+            "argv": [
+              "sgdisk",
+              "--typecode=2:8300",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "set partition 2 type to 8300"
+          },
+          {
+            "argv": [
+              "sgdisk",
+              "--change-name=2:cryptsystem",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "label partition 2 as cryptsystem"
+          }
+        ]
+      },
+      {
+        "id": "encryption",
+        "title": "Set up LUKS2 root",
+        "phase": "encryption",
+        "destructive": true,
+        "description": "luksFormat then open root partition",
+        "commands": [
+          {
+            "argv": [
+              "cryptsetup",
+              "--batch-mode",
+              "luksFormat",
+              "--type",
+              "luks2",
+              "/dev/disk/by-partlabel/cryptsystem"
+            ],
+            "chroot": false,
+            "sensitive": true,
+            "input": "***",
+            "description": "format LUKS2 container on root partition"
+          },
+          {
+            "argv": [
+              "cryptsetup",
+              "open",
+              "/dev/disk/by-partlabel/cryptsystem",
+              "system"
+            ],
+            "chroot": false,
+            "sensitive": true,
+            "input": "***",
+            "description": "open LUKS2 container as /dev/mapper/system"
+          }
+        ]
+      },
+      {
+        "id": "filesystems",
+        "title": "Create filesystems",
+        "phase": "filesystems",
+        "destructive": true,
+        "description": "create btrfs root + FAT32 EFI",
+        "commands": [
+          {
+            "argv": [
+              "mkfs.fat",
+              "-F",
+              "32",
+              "-n",
+              "EFI",
+              "/dev/disk/by-partlabel/EFI"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "create FAT32 EFI filesystem"
+          },
+          {
+            "argv": [
+              "mkfs.btrfs",
+              "-f",
+              "-L",
+              "system",
+              "/dev/mapper/system"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "create btrfs filesystem"
+          }
+        ]
+      },
+      {
+        "id": "mounting",
+        "title": "Mount filesystems",
+        "phase": "mounting",
+        "destructive": false,
+        "description": "mount root and ESP under /mnt",
+        "commands": [
+          {
+            "argv": [
+              "mount",
+              "/dev/mapper/system",
+              "/mnt"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "mount btrfs root for subvolume creation"
+          },
+          {
+            "argv": [
+              "btrfs",
+              "subvolume",
+              "create",
+              "/mnt/@"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "create subvolume @"
+          },
+          {
+            "argv": [
+              "btrfs",
+              "subvolume",
+              "create",
+              "/mnt/@home"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "create subvolume @home"
+          },
+          {
+            "argv": [
+              "btrfs",
+              "subvolume",
+              "create",
+              "/mnt/@snapshots"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "create subvolume @snapshots"
+          },
+          {
+            "argv": [
+              "umount",
+              "/mnt"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "unmount before remount with subvolumes"
+          },
+          {
+            "argv": [
+              "mkdir",
+              "-p",
+              "/mnt"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "ensure /mnt exists"
+          },
+          {
+            "argv": [
+              "mount",
+              "-o",
+              "defaults,x-mount.mkdir,noatime,nodiratime,compress=zstd,space_cache=v2,ssd,subvol=@",
+              "/dev/mapper/system",
+              "/mnt"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "mount subvolume @ at /mnt"
+          },
+          {
+            "argv": [
+              "mkdir",
+              "-p",
+              "/mnt/home"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "ensure /mnt/home exists"
+          },
+          {
+            "argv": [
+              "mount",
+              "-o",
+              "defaults,x-mount.mkdir,noatime,nodiratime,compress=zstd,space_cache=v2,ssd,subvol=@home",
+              "/dev/mapper/system",
+              "/mnt/home"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "mount subvolume @home at /mnt/home"
+          },
+          {
+            "argv": [
+              "mkdir",
+              "-p",
+              "/mnt/.snapshots"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "ensure /mnt/.snapshots exists"
+          },
+          {
+            "argv": [
+              "mount",
+              "-o",
+              "defaults,x-mount.mkdir,noatime,nodiratime,compress=zstd,space_cache=v2,ssd,subvol=@snapshots",
+              "/dev/mapper/system",
+              "/mnt/.snapshots"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "mount subvolume @snapshots at /mnt/.snapshots"
+          },
+          {
+            "argv": [
+              "mkdir",
+              "-p",
+              "/mnt/boot"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "create /boot mountpoint"
+          },
+          {
+            "argv": [
+              "mount",
+              "/dev/disk/by-partlabel/EFI",
+              "/mnt/boot"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "mount EFI at /boot"
+          }
+        ]
+      },
+      {
+        "id": "packages",
+        "title": "Pacstrap base packages",
+        "phase": "packages",
+        "destructive": false,
+        "description": "install base packages into the new system",
+        "commands": [
+          {
+            "argv": [
+              "pacstrap",
+              "-K",
+              "/mnt",
+              "base",
+              "base-devel",
+              "linux",
+              "linux-firmware",
+              "networkmanager",
+              "sudo",
+              "vim"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "install 7 packages into /mnt"
+          }
+        ]
+      },
+      {
+        "id": "fstab",
+        "title": "Generate fstab",
+        "phase": "fstab",
+        "destructive": false,
+        "description": "write /mnt/etc/fstab",
+        "commands": [
+          {
+            "argv": [
+              "sh",
+              "-c",
+              "genfstab -L -p /mnt >> /mnt/etc/fstab"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "genfstab -L -p (label-based)"
+          }
+        ]
+      },
+      {
+        "id": "system_config",
+        "title": "System configuration",
+        "phase": "system-config",
+        "destructive": false,
+        "description": "locale, timezone, hostname, hosts, vconsole",
+        "commands": [
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/etc/locale.conf"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "LANG=en_US.UTF-8\n",
+            "description": "write /etc/locale.conf"
+          },
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/etc/locale.gen"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "en_US.UTF-8 UTF-8\n",
+            "description": "write /etc/locale.gen"
+          },
+          {
+            "argv": [
+              "locale-gen"
+            ],
+            "chroot": true,
+            "sensitive": false,
+            "input": null,
+            "description": "run locale-gen"
+          },
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/etc/vconsole.conf"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "KEYMAP=us\n",
+            "description": "write /etc/vconsole.conf"
+          },
+          {
+            "argv": [
+              "ln",
+              "-sf",
+              "/usr/share/zoneinfo/UTC",
+              "/etc/localtime"
+            ],
+            "chroot": true,
+            "sensitive": false,
+            "input": null,
+            "description": "set timezone to UTC"
+          },
+          {
+            "argv": [
+              "hwclock",
+              "--systohc"
+            ],
+            "chroot": true,
+            "sensitive": false,
+            "input": null,
+            "description": "sync hardware clock"
+          },
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/etc/hostname"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "arch\n",
+            "description": "write /etc/hostname"
+          },
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/etc/hosts"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "127.0.0.1 localhost\n::1       localhost\n127.0.1.1 arch.localdomain arch\n",
+            "description": "write /etc/hosts"
+          }
+        ]
+      },
+      {
+        "id": "initramfs",
+        "title": "Generate initramfs",
+        "phase": "initramfs",
+        "destructive": false,
+        "description": "write hooks snippet and run mkinitcpio",
+        "commands": [
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/etc/mkinitcpio.conf.d/10-hooks.conf"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "HOOKS=(base systemd autodetect modconf kms keyboard sd-vconsole block sd-encrypt filesystems fsck)\n",
+            "description": "write mkinitcpio hooks snippet at /mnt/etc/mkinitcpio.conf.d/10-hooks.conf"
+          },
+          {
+            "argv": [
+              "mkinitcpio",
+              "-p",
+              "linux"
+            ],
+            "chroot": true,
+            "sensitive": false,
+            "input": null,
+            "description": "regenerate initramfs for linux"
+          }
+        ]
+      },
+      {
+        "id": "bootloader",
+        "title": "Install bootloader",
+        "phase": "bootloader",
+        "destructive": false,
+        "description": "install systemd-boot and write loader entry",
+        "commands": [
+          {
+            "argv": [
+              "bootctl",
+              "--esp-path=/mnt/boot",
+              "install"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "install systemd-boot to ESP (run outside chroot for EFI vars)"
+          },
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/boot/loader/loader.conf"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "default arch.conf\ntimeout 5\nconsole-mode auto\neditor no\n",
+            "description": "write /mnt/boot/loader/loader.conf"
+          },
+          {
+            "argv": [
+              "bash",
+              "-c",
+              "set -euo pipefail\nLUKS_UUID=\"$(blkid -s UUID -o value /dev/disk/by-partlabel/cryptsystem)\"\ninstall -Dm644 /dev/stdin /mnt/boot/loader/entries/arch.conf <<EOF\ntitle Arch Linux\nlinux /vmlinuz-linux\ninitrd /initramfs-linux.img\noptions rd.luks.name=${LUKS_UUID}=system rd.luks.options=discard root=/dev/mapper/system rootflags=subvol=@ rw\nEOF\n"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "write /mnt/boot/loader/entries/arch.conf with discovered LUKS UUID"
+          }
+        ]
+      },
+      {
+        "id": "services",
+        "title": "Enable services and timers",
+        "phase": "services",
+        "destructive": false,
+        "description": "systemctl enable for declared units",
+        "commands": [
+          {
+            "argv": [
+              "systemctl",
+              "enable",
+              "NetworkManager"
+            ],
+            "chroot": true,
+            "sensitive": false,
+            "input": null,
+            "description": "enable NetworkManager"
+          },
+          {
+            "argv": [
+              "systemctl",
+              "enable",
+              "fstrim.timer"
+            ],
+            "chroot": true,
+            "sensitive": false,
+            "input": null,
+            "description": "enable fstrim.timer"
+          }
+        ]
+      },
+      {
+        "id": "users",
+        "title": "Configure users",
+        "phase": "users",
+        "destructive": false,
+        "description": "set root password and create regular users",
+        "commands": [
+          {
+            "argv": [
+              "useradd",
+              "-m",
+              "-s",
+              "/bin/bash",
+              "-G",
+              "wheel",
+              "alice"
+            ],
+            "chroot": true,
+            "sensitive": false,
+            "input": null,
+            "description": "create user alice"
+          },
+          {
+            "argv": [
+              "chpasswd"
+            ],
+            "chroot": true,
+            "sensitive": true,
+            "input": "***",
+            "description": "set password for alice"
+          },
+          {
+            "argv": [
+              "install",
+              "-Dm440",
+              "/dev/stdin",
+              "/etc/sudoers.d/10-alice"
+            ],
+            "chroot": true,
+            "sensitive": false,
+            "input": "alice ALL=(ALL:ALL) ALL\n",
+            "description": "grant sudo to alice"
+          }
+        ]
+      },
+      {
+        "id": "cleanup",
+        "title": "Unmount target",
+        "phase": "cleanup",
+        "destructive": false,
+        "description": "umount -R /mnt",
+        "commands": [
+          {
+            "argv": [
+              "umount",
+              "-R",
+              "/mnt"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "recursively unmount target"
+          }
+        ]
+      }
+    ]
+  }
+  '''
+# ---
+# name: test_minimal_ext4_plan_snapshot
+  '''
+  {
+    "version": "1",
+    "destructive": true,
+    "steps": [
+      {
+        "id": "partitioning",
+        "title": "Partition disk",
+        "phase": "partitioning",
+        "destructive": true,
+        "description": "Create GPT layout 'efi-root' on /dev/sda",
+        "commands": [
+          {
+            "argv": [
+              "sgdisk",
+              "--zap-all",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "wipe partition table"
+          },
+          {
+            "argv": [
+              "sgdisk",
+              "--new=1:0:+512MiB",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "create partition 1 (EFI, ef00)"
+          },
+          {
+            "argv": [
+              "sgdisk",
+              "--typecode=1:ef00",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "set partition 1 type to ef00"
+          },
+          {
+            "argv": [
+              "sgdisk",
+              "--change-name=1:EFI",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "label partition 1 as EFI"
+          },
+          {
+            "argv": [
+              "sgdisk",
+              "--new=2:0:0",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "create partition 2 (system, 8300)"
+          },
+          {
+            "argv": [
+              "sgdisk",
+              "--typecode=2:8300",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "set partition 2 type to 8300"
+          },
+          {
+            "argv": [
+              "sgdisk",
+              "--change-name=2:system",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "label partition 2 as system"
+          }
+        ]
+      },
+      {
+        "id": "filesystems",
+        "title": "Create filesystems",
+        "phase": "filesystems",
+        "destructive": true,
+        "description": "create ext4 root + FAT32 EFI",
+        "commands": [
+          {
+            "argv": [
+              "mkfs.fat",
+              "-F",
+              "32",
+              "-n",
+              "EFI",
+              "/dev/disk/by-partlabel/EFI"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "create FAT32 EFI filesystem"
+          },
+          {
+            "argv": [
+              "mkfs.ext4",
+              "-F",
+              "-L",
+              "system",
+              "/dev/disk/by-partlabel/system"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "create ext4 filesystem labeled system"
+          }
+        ]
+      },
+      {
+        "id": "mounting",
+        "title": "Mount filesystems",
+        "phase": "mounting",
+        "destructive": false,
+        "description": "mount root and ESP under /mnt",
+        "commands": [
+          {
+            "argv": [
+              "mount",
+              "/dev/disk/by-partlabel/system",
+              "/mnt"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "mount root filesystem"
+          },
+          {
+            "argv": [
+              "mkdir",
+              "-p",
+              "/mnt/boot"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "create /boot mountpoint"
+          },
+          {
+            "argv": [
+              "mount",
+              "/dev/disk/by-partlabel/EFI",
+              "/mnt/boot"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "mount EFI filesystem at /boot"
+          }
+        ]
+      },
+      {
+        "id": "packages",
+        "title": "Pacstrap base packages",
+        "phase": "packages",
+        "destructive": false,
+        "description": "install base packages into the new system",
+        "commands": [
+          {
+            "argv": [
+              "pacstrap",
+              "-K",
+              "/mnt",
+              "base",
+              "base-devel",
+              "linux",
+              "linux-firmware",
+              "networkmanager",
+              "sudo",
+              "vim"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "install 7 packages into /mnt"
+          }
+        ]
+      },
+      {
+        "id": "fstab",
+        "title": "Generate fstab",
+        "phase": "fstab",
+        "destructive": false,
+        "description": "write /mnt/etc/fstab",
+        "commands": [
+          {
+            "argv": [
+              "sh",
+              "-c",
+              "genfstab -L -p /mnt >> /mnt/etc/fstab"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "genfstab -L -p (label-based)"
+          }
+        ]
+      },
+      {
+        "id": "system_config",
+        "title": "System configuration",
+        "phase": "system-config",
+        "destructive": false,
+        "description": "locale, timezone, hostname, hosts, vconsole",
+        "commands": [
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/etc/locale.conf"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "LANG=en_US.UTF-8\n",
+            "description": "write /etc/locale.conf"
+          },
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/etc/locale.gen"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "en_US.UTF-8 UTF-8\n",
+            "description": "write /etc/locale.gen"
+          },
+          {
+            "argv": [
+              "locale-gen"
+            ],
+            "chroot": true,
+            "sensitive": false,
+            "input": null,
+            "description": "run locale-gen"
+          },
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/etc/vconsole.conf"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "KEYMAP=us\n",
+            "description": "write /etc/vconsole.conf"
+          },
+          {
+            "argv": [
+              "ln",
+              "-sf",
+              "/usr/share/zoneinfo/UTC",
+              "/etc/localtime"
+            ],
+            "chroot": true,
+            "sensitive": false,
+            "input": null,
+            "description": "set timezone to UTC"
+          },
+          {
+            "argv": [
+              "hwclock",
+              "--systohc"
+            ],
+            "chroot": true,
+            "sensitive": false,
+            "input": null,
+            "description": "sync hardware clock"
+          },
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/etc/hostname"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "arch\n",
+            "description": "write /etc/hostname"
+          },
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/etc/hosts"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "127.0.0.1 localhost\n::1       localhost\n127.0.1.1 arch.localdomain arch\n",
+            "description": "write /etc/hosts"
+          }
+        ]
+      },
+      {
+        "id": "initramfs",
+        "title": "Generate initramfs",
+        "phase": "initramfs",
+        "destructive": false,
+        "description": "write hooks snippet and run mkinitcpio",
+        "commands": [
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/etc/mkinitcpio.conf.d/10-hooks.conf"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "HOOKS=(base udev autodetect modconf block filesystems fsck)\n",
+            "description": "write mkinitcpio hooks snippet at /mnt/etc/mkinitcpio.conf.d/10-hooks.conf"
+          },
+          {
+            "argv": [
+              "mkinitcpio",
+              "-p",
+              "linux"
+            ],
+            "chroot": true,
+            "sensitive": false,
+            "input": null,
+            "description": "regenerate initramfs for linux"
+          }
+        ]
+      },
+      {
+        "id": "bootloader",
+        "title": "Install bootloader",
+        "phase": "bootloader",
+        "destructive": false,
+        "description": "install systemd-boot and write loader entry",
+        "commands": [
+          {
+            "argv": [
+              "bootctl",
+              "--esp-path=/mnt/boot",
+              "install"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "install systemd-boot to ESP (run outside chroot for EFI vars)"
+          },
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/boot/loader/loader.conf"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "default arch.conf\ntimeout 5\nconsole-mode auto\neditor no\n",
+            "description": "write /mnt/boot/loader/loader.conf"
+          },
+          {
+            "argv": [
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/boot/loader/entries/arch.conf"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": "title Arch Linux\nlinux /vmlinuz-linux\ninitrd /initramfs-linux.img\noptions root=LABEL=system rw\n",
+            "description": "write /mnt/boot/loader/entries/arch.conf"
+          }
+        ]
+      },
+      {
+        "id": "services",
+        "title": "Enable services and timers",
+        "phase": "services",
+        "destructive": false,
+        "description": "systemctl enable for declared units",
+        "commands": [
+          {
+            "argv": [
+              "systemctl",
+              "enable",
+              "NetworkManager"
+            ],
+            "chroot": true,
+            "sensitive": false,
+            "input": null,
+            "description": "enable NetworkManager"
+          },
+          {
+            "argv": [
+              "systemctl",
+              "enable",
+              "fstrim.timer"
+            ],
+            "chroot": true,
+            "sensitive": false,
+            "input": null,
+            "description": "enable fstrim.timer"
+          }
+        ]
+      },
+      {
+        "id": "users",
+        "title": "Configure users",
+        "phase": "users",
+        "destructive": false,
+        "description": "set root password and create regular users",
+        "commands": []
+      },
+      {
+        "id": "cleanup",
+        "title": "Unmount target",
+        "phase": "cleanup",
+        "destructive": false,
+        "description": "umount -R /mnt",
+        "commands": [
+          {
+            "argv": [
+              "umount",
+              "-R",
+              "/mnt"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "recursively unmount target"
+          }
+        ]
+      }
+    ]
+  }
+  '''
+# ---
