@@ -186,6 +186,116 @@ class BtrfsStrategy:
         return tuple(cmds)
 
 
+@dataclass(frozen=True, slots=True)
+class _SimpleMkfsStrategy:
+    """Shared body for ext4/xfs/f2fs (no subvolumes)."""
+
+    spec: FilesystemSpec
+    root_partition: str
+    efi_partition: str
+    mount_root: Path
+    home_partition: str | None
+    mkfs_argv: tuple[str, ...]
+    description_label: str
+
+    def commands(self) -> tuple[Command, ...]:
+        cmds: list[Command] = [
+            Command(
+                argv=("mkfs.fat", "-F", "32", "-n", "EFI", self.efi_partition),
+                description="create FAT32 EFI filesystem",
+            ),
+            Command(
+                argv=(*self.mkfs_argv, "-L", self.spec.label, self.root_partition),
+                description=(
+                    f"create {self.description_label} filesystem labeled {self.spec.label}"
+                ),
+            ),
+        ]
+        if self.home_partition:
+            cmds.append(
+                Command(
+                    argv=(
+                        *self.mkfs_argv,
+                        "-L",
+                        self.spec.home_label,
+                        self.home_partition,
+                    ),
+                    description=(
+                        f"create {self.description_label} /home filesystem "
+                        f"labeled {self.spec.home_label}"
+                    ),
+                ),
+            )
+        cmds.extend(
+            (
+                Command(
+                    argv=("mount", self.root_partition, str(self.mount_root)),
+                    description="mount root filesystem",
+                ),
+                Command(
+                    argv=("mkdir", "-p", str(self.mount_root / "boot")),
+                    description="create /boot mountpoint",
+                ),
+                Command(
+                    argv=("mount", self.efi_partition, str(self.mount_root / "boot")),
+                    description="mount EFI filesystem at /boot",
+                ),
+            ),
+        )
+        if self.home_partition:
+            cmds.extend(
+                (
+                    Command(
+                        argv=("mkdir", "-p", str(self.mount_root / "home")),
+                        description="create /home mountpoint",
+                    ),
+                    Command(
+                        argv=("mount", self.home_partition, str(self.mount_root / "home")),
+                        description="mount /home filesystem",
+                    ),
+                ),
+            )
+        return tuple(cmds)
+
+
+def _xfs_strategy(
+    spec: FilesystemSpec,
+    *,
+    root_partition: str,
+    efi_partition: str,
+    mount_root: Path,
+    home_partition: str | None,
+) -> _SimpleMkfsStrategy:
+    return _SimpleMkfsStrategy(
+        spec=spec,
+        root_partition=root_partition,
+        efi_partition=efi_partition,
+        mount_root=mount_root,
+        home_partition=home_partition,
+        mkfs_argv=("mkfs.xfs", "-f"),
+        description_label="xfs",
+    )
+
+
+def _f2fs_strategy(
+    spec: FilesystemSpec,
+    *,
+    root_partition: str,
+    efi_partition: str,
+    mount_root: Path,
+    home_partition: str | None,
+) -> _SimpleMkfsStrategy:
+    return _SimpleMkfsStrategy(
+        spec=spec,
+        root_partition=root_partition,
+        efi_partition=efi_partition,
+        mount_root=mount_root,
+        home_partition=home_partition,
+        mkfs_argv=("mkfs.f2fs", "-f"),
+        description_label="f2fs",
+    )
+
+
 def build_filesystem_strategy(
     spec: FilesystemSpec,
     *,
@@ -193,7 +303,7 @@ def build_filesystem_strategy(
     efi_partition: str,
     mount_root: Path,
     home_partition: str | None = None,
-) -> Ext4Strategy | BtrfsStrategy:
+) -> Ext4Strategy | BtrfsStrategy | _SimpleMkfsStrategy:
     if spec.kind is FilesystemKind.EXT4:
         return Ext4Strategy(
             spec=spec,
@@ -202,10 +312,28 @@ def build_filesystem_strategy(
             mount_root=mount_root,
             home_partition=home_partition,
         )
-    return BtrfsStrategy(
-        spec=spec,
-        root_partition=root_partition,
-        efi_partition=efi_partition,
-        mount_root=mount_root,
-        home_partition=home_partition,
-    )
+    if spec.kind is FilesystemKind.BTRFS:
+        return BtrfsStrategy(
+            spec=spec,
+            root_partition=root_partition,
+            efi_partition=efi_partition,
+            mount_root=mount_root,
+            home_partition=home_partition,
+        )
+    if spec.kind is FilesystemKind.XFS:
+        return _xfs_strategy(
+            spec,
+            root_partition=root_partition,
+            efi_partition=efi_partition,
+            mount_root=mount_root,
+            home_partition=home_partition,
+        )
+    if spec.kind is FilesystemKind.F2FS:
+        return _f2fs_strategy(
+            spec,
+            root_partition=root_partition,
+            efi_partition=efi_partition,
+            mount_root=mount_root,
+            home_partition=home_partition,
+        )
+    raise ValueError(f"unsupported filesystem kind: {spec.kind!r}")

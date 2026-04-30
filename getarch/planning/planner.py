@@ -338,7 +338,10 @@ class Planner:
                 mount_options=opts,
                 subvolumes=subs,
             )
-        return FilesystemSpec(kind=FilesystemKind.EXT4, label=cfg.filesystem.label)
+        return FilesystemSpec(
+            kind=FilesystemKind(cfg.filesystem.kind),
+            label=cfg.filesystem.label,
+        )
 
     def _swap_step(self, cfg: Config, mount_root: Path) -> PlannedStep | None:
         if cfg.swap.kind != "swapfile":

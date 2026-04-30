@@ -74,6 +74,30 @@ def test_ext4_with_home_partition_creates_and_mounts_it() -> None:
     assert ("mount", "/dev/disk/by-partlabel/home", "/mnt/home") in argvs
 
 
+def test_xfs_strategy_emits_mkfs_xfs() -> None:
+    spec = FilesystemSpec(kind=FilesystemKind.XFS, label="system")
+    cmds = build_filesystem_strategy(
+        spec=spec,
+        root_partition="/dev/disk/by-partlabel/system",
+        efi_partition="/dev/disk/by-partlabel/EFI",
+        mount_root=Path("/mnt"),
+    ).commands()
+    flat = [c.argv for c in cmds]
+    assert ("mkfs.xfs", "-f", "-L", "system", "/dev/disk/by-partlabel/system") in flat
+
+
+def test_f2fs_strategy_emits_mkfs_f2fs() -> None:
+    spec = FilesystemSpec(kind=FilesystemKind.F2FS, label="system")
+    cmds = build_filesystem_strategy(
+        spec=spec,
+        root_partition="/dev/disk/by-partlabel/system",
+        efi_partition="/dev/disk/by-partlabel/EFI",
+        mount_root=Path("/mnt"),
+    ).commands()
+    flat = [c.argv for c in cmds]
+    assert ("mkfs.f2fs", "-f", "-L", "system", "/dev/disk/by-partlabel/system") in flat
+
+
 def test_btrfs_with_home_partition_creates_separate_filesystem() -> None:
     spec = FilesystemSpec(
         kind=FilesystemKind.BTRFS,
