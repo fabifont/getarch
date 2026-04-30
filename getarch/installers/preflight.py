@@ -31,7 +31,5 @@ class RuntimePreflightStep:
         results: list[CommandResult] = [
             ctx.runner.run(c, chroot_path=str(ctx.mount_root)) for c in commands
         ]
-        status = (
-            StepStatus.SUCCEEDED if all(r.ok for r in results) else StepStatus.FAILED
-        )
+        status = StepStatus.SUCCEEDED if all(r.ok for r in results) else StepStatus.FAILED
         return StepResult(step_id=self.id, status=status, commands=tuple(results))

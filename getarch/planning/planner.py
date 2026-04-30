@@ -45,9 +45,7 @@ class Planner:
             else "/dev/disk/by-partlabel/system"
         )
         efi_partition = "/dev/disk/by-partlabel/EFI"
-        fs_steps = self._filesystem_steps(
-            cfg, root_partition, efi_partition, mount_root
-        )
+        fs_steps = self._filesystem_steps(cfg, root_partition, efi_partition, mount_root)
         steps.extend(fs_steps)
 
         steps.append(self._packages_step(cfg, mount_root))
@@ -67,9 +65,7 @@ class Planner:
         except ValueError as exc:
             raise PlanError(f"plan invalid: {exc}") from exc
 
-    def _partitioning_step(
-        self, cfg: Config, disk: Disk, *, encrypted: bool
-    ) -> PlannedStep:
+    def _partitioning_step(self, cfg: Config, disk: Disk, *, encrypted: bool) -> PlannedStep:
         return PlannedStep(
             id="partitioning",
             title="Partition disk",
@@ -197,9 +193,7 @@ class Planner:
             description="write hooks snippet and run mkinitcpio",
         )
 
-    def _bootloader_step(
-        self, cfg: Config, mount_root: Path, *, encrypted: bool
-    ) -> PlannedStep:
+    def _bootloader_step(self, cfg: Config, mount_root: Path, *, encrypted: bool) -> PlannedStep:
         rootflags = "rootflags=subvol=@" if cfg.filesystem.kind == "btrfs" else None
         microcode = self._microcode(cfg)
         bl_spec = BootloaderSpec(
@@ -211,9 +205,7 @@ class Planner:
         encryption_spec = EncryptionSpec(
             kind=EncryptionKind.LUKS2 if encrypted else EncryptionKind.NONE,
             password=(
-                Secret(cfg.encryption.password)
-                if encrypted and cfg.encryption.password
-                else None
+                Secret(cfg.encryption.password) if encrypted and cfg.encryption.password else None
             ),
             mapper_name=cfg.encryption.mapper_name,
         )
@@ -309,9 +301,7 @@ class Planner:
             return MicrocodeKind.AMD
         return MicrocodeKind.NONE
 
-    def _system_config_commands(
-        self, cfg: Config, mount_root: Path
-    ) -> tuple[Command, ...]:
+    def _system_config_commands(self, cfg: Config, mount_root: Path) -> tuple[Command, ...]:
         return (
             Command(
                 argv=(

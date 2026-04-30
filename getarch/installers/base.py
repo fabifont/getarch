@@ -29,11 +29,7 @@ class PlannedStepExecutor:
         results: list[CommandResult] = []
         for cmd in self.planned.commands:
             results.append(ctx.runner.run(cmd, chroot_path=str(ctx.mount_root)))
-        status = (
-            StepStatus.SUCCEEDED
-            if all(r.ok for r in results)
-            else StepStatus.FAILED
-        )
+        status = StepStatus.SUCCEEDED if all(r.ok for r in results) else StepStatus.FAILED
         return StepResult(
             step_id=self.planned.id,
             status=status,

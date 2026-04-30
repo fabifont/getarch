@@ -24,9 +24,7 @@ class SgdiskStrategy:
             ),
         ]
         index = 1
-        cmds.extend(
-            self._partition(index, f"+{self.layout.efi_size_mib}MiB", "ef00", "EFI")
-        )
+        cmds.extend(self._partition(index, f"+{self.layout.efi_size_mib}MiB", "ef00", "EFI"))
         index += 1
 
         if "swap" in self.layout.layout:
@@ -43,9 +41,7 @@ class SgdiskStrategy:
         cmds.extend(self._partition(index, "0", "8300", root_label))
         return tuple(cmds)
 
-    def _partition(
-        self, idx: int, end: str, code: str, label: str
-    ) -> tuple[Command, ...]:
+    def _partition(self, idx: int, end: str, code: str, label: str) -> tuple[Command, ...]:
         path = self.disk.path.as_posix()
         return (
             Command(

@@ -21,15 +21,11 @@ def _plan() -> InstallPlan:
 
 
 def test_assume_yes_skips_prompt() -> None:
-    require_destructive_confirmation(
-        _plan(), assume_yes=True, force=False, prompt=lambda _: False
-    )
+    require_destructive_confirmation(_plan(), assume_yes=True, force=False, prompt=lambda _: False)
 
 
 def test_force_skips_prompt() -> None:
-    require_destructive_confirmation(
-        _plan(), assume_yes=False, force=True, prompt=lambda _: False
-    )
+    require_destructive_confirmation(_plan(), assume_yes=False, force=True, prompt=lambda _: False)
 
 
 def test_no_destructive_steps_no_prompt() -> None:
@@ -46,9 +42,7 @@ def test_no_destructive_steps_no_prompt() -> None:
             ),
         ),
     )
-    require_destructive_confirmation(
-        plan, assume_yes=False, force=False, prompt=lambda _: True
-    )
+    require_destructive_confirmation(plan, assume_yes=False, force=False, prompt=lambda _: True)
 
 
 def test_user_says_no_raises() -> None:

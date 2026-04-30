@@ -10,9 +10,7 @@ def test_writes_hooks_and_runs_mkinitcpio() -> None:
         kernel=KernelSpec(kind=KernelKind.LINUX),
         mount_root=Path("/mnt"),
     ).commands()
-    flat = " ".join(arg for c in cmds for arg in c.argv) + " ".join(
-        c.input or "" for c in cmds
-    )
+    flat = " ".join(arg for c in cmds for arg in c.argv) + " ".join(c.input or "" for c in cmds)
     assert "/mnt/etc/mkinitcpio.conf.d/10-hooks.conf" in flat
     assert "mkinitcpio" in flat
     assert "linux" in flat

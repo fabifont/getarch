@@ -18,9 +18,7 @@ class LsblkBlockDevices:
     runner: CommandRunner
 
     def list_disks(self) -> tuple[Disk, ...]:
-        result = self.runner.run(
-            Command(argv=("lsblk", "-J", "-b", "-o", "NAME,SIZE,TYPE,MODEL"))
-        )
+        result = self.runner.run(Command(argv=("lsblk", "-J", "-b", "-o", "NAME,SIZE,TYPE,MODEL")))
         try:
             data: Any = json.loads(result.stdout)
         except json.JSONDecodeError as exc:

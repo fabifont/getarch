@@ -86,7 +86,7 @@ ignore = [
     "TC002",
     "PT011",   # ValueError without match string is fine in domain construction tests
 ]
-"getarch/cli/**" = ["TRY003"]
+"getarch/cli/**" = ["TRY003", "B008"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["getarch"]

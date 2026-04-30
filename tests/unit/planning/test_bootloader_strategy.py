@@ -9,9 +9,7 @@ from getarch.planning.strategies.bootloader import SystemdBootStrategy
 
 def test_bootctl_runs_outside_chroot_with_esp_path() -> None:
     cmds = SystemdBootStrategy(
-        spec=BootloaderSpec(
-            kind=BootloaderKind.SYSTEMD_BOOT, entry_id="arch", timeout_seconds=3
-        ),
+        spec=BootloaderSpec(kind=BootloaderKind.SYSTEMD_BOOT, entry_id="arch", timeout_seconds=3),
         kernel=KernelSpec(kind=KernelKind.LINUX),
         microcode=MicrocodeKind.INTEL,
         encryption=EncryptionSpec(kind=EncryptionKind.NONE),
@@ -35,15 +33,12 @@ def test_non_luks_entry_uses_label_and_no_bash() -> None:
         mount_root=Path("/mnt"),
     ).commands()
     assert "bash" not in [c.argv[0] for c in cmds]
-    flat = " ".join(arg for c in cmds for arg in c.argv) + " ".join(
-        c.input or "" for c in cmds
-    )
+    flat = " ".join(arg for c in cmds for arg in c.argv) + " ".join(c.input or "" for c in cmds)
     assert "root=LABEL=system" in flat
     entry_cmd = next(
         c
         for c in cmds
-        if c.argv[:3] == ("install", "-Dm644", "/dev/stdin")
-        and "entries" in c.argv[3]
+        if c.argv[:3] == ("install", "-Dm644", "/dev/stdin") and "entries" in c.argv[3]
     )
     assert entry_cmd.input is not None
     assert "linux /vmlinuz-linux" in entry_cmd.input
@@ -77,7 +72,5 @@ def test_btrfs_includes_rootflags() -> None:
         crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
         mount_root=Path("/mnt"),
     ).commands()
-    flat = " ".join(arg for c in cmds for arg in c.argv) + " ".join(
-        c.input or "" for c in cmds
-    )
+    flat = " ".join(arg for c in cmds for arg in c.argv) + " ".join(c.input or "" for c in cmds)
     assert "rootflags=subvol=@" in flat

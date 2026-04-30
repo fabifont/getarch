@@ -26,9 +26,7 @@ def test_encrypted_uses_cryptsystem_label() -> None:
 
 def test_efi_swap_root_three_partitions() -> None:
     disk = Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**33)
-    layout = PartitionLayout(
-        layout="efi-swap-root", efi_size_mib=512, swap_size_mib=2048
-    )
+    layout = PartitionLayout(layout="efi-swap-root", efi_size_mib=512, swap_size_mib=2048)
     cmds = SgdiskStrategy(disk=disk, layout=layout, encrypted=False).commands()
     flat = " ".join(arg for c in cmds for arg in c.argv)
     assert "8200" in flat

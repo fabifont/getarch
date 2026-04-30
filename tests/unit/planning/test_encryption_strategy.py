@@ -11,9 +11,7 @@ def test_no_encryption_strategy_emits_zero_commands() -> None:
 
 
 def test_luks_strategy_format_and_open() -> None:
-    spec = EncryptionSpec(
-        kind=EncryptionKind.LUKS2, password=Secret("p"), mapper_name="system"
-    )
+    spec = EncryptionSpec(kind=EncryptionKind.LUKS2, password=Secret("p"), mapper_name="system")
     cmds = build_encryption_strategy(spec).commands()
     assert any("luksFormat" in arg for c in cmds for arg in c.argv)
     assert any("open" in arg for c in cmds for arg in c.argv)
