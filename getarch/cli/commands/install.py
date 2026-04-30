@@ -15,6 +15,7 @@ from getarch.domain.disk import Disk
 from getarch.errors import GetarchError, PlanError
 from getarch.execution.context import ExecutionContext
 from getarch.execution.dry_runner import DryRunner
+from getarch.execution.logging_runner import LoggingRunner
 from getarch.execution.pipeline import Pipeline
 from getarch.execution.real_runner import RealRunner
 from getarch.execution.runner import CommandRunner
@@ -113,9 +114,10 @@ def run(
             prompt=console.confirm,
             mounts_summary=report.mountpoints_seen if report else (),
         )
-        runner = _build_runner(dry_run=dry_run)
+        inner_runner = _build_runner(dry_run=dry_run)
+        audit_runner = LoggingRunner(inner=inner_runner)
         exec_ctx = ExecutionContext(
-            runner=runner,
+            runner=audit_runner,
             mount_root=mount_root,
             assume_yes=assume_yes,
             force=force,
@@ -132,6 +134,16 @@ def run(
             steps.append(RuntimePreflightStep())
         steps.extend(PlannedStepExecutor(planned=s) for s in plan.steps)
         Pipeline(steps=tuple(steps)).run(exec_ctx)  # type: ignore[arg-type]
+        if not dry_run:
+            log_path = mount_root / "var/log/getarch.log"
+            try:
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                log_path.write_text(audit_runner.render(), encoding="utf-8")
+            except OSError as exc:
+                console.log(
+                    f"[yellow]warning: could not write audit log to "
+                    f"{log_path}: {exc}[/yellow]",
+                )
     except GetarchError as exc:
         console.error(str(exc))
         raise typer.Exit(code=2) from None
