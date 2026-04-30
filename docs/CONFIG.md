@@ -222,6 +222,13 @@ Regular users may declare `password` (plain), `hashed_password` (preferred),
 * `--skip-runtime-preflight` — skip the in-pipeline runtime preflight step
   (NTP sync, keyring populate). Default off.
 * `--skip-environment-preflight` — skip the *environment* preflight that
-  asserts root, Arch ISO, UEFI, internet, pacman keyring, and a clean target
-  disk. Default off. Useful on minimal images where one of these checks
-  produces a false positive.
+  asserts root, Arch ISO, UEFI, internet, pacman keyring, locale support,
+  and pacman package availability. Default off. Useful on minimal images
+  where one of these checks produces a false positive.
+
+  Important: a separate **disk-busy guard** runs unconditionally before the
+  first destructive step (when `--dry-run` is not set). It refuses to proceed
+  if the target disk has any mounted partitions. This guard cannot be
+  bypassed by `--skip-environment-preflight`, `--yes`, or `--force` — the
+  whole point is to refresh the mount-state check immediately before
+  destructive commands run.

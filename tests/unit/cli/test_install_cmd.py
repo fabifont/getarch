@@ -77,6 +77,46 @@ def test_install_skip_environment_preflight_warns(
     assert "skipping environment preflight" in out
 
 
+def test_skip_environment_preflight_does_not_bypass_disk_busy_guard(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    """The mount-busy guard runs unconditionally before destructive steps.
+
+    Even if the user passes --skip-environment-preflight together with --yes,
+    the install must refuse to proceed when the target disk has live mounts.
+    """
+    mocker.patch(
+        "getarch.cli.commands.install._discover_disks",
+        return_value=(Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**33),),
+    )
+
+    class _Busy:
+        def list_disks(self) -> tuple[Disk, ...]:
+            return (Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**33),)
+
+        def target_disk_busy(self, path: str) -> tuple[str, ...]:
+            del path
+            return ("/", "/boot")
+
+    mocker.patch(
+        "getarch.cli.commands.install.LsblkBlockDevices",
+        return_value=_Busy(),
+    )
+    p = _write(tmp_path)
+    result = CliRunner().invoke(
+        app,
+        [
+            "--no-color",
+            "install",
+            str(p),
+            "--yes",
+            "--skip-environment-preflight",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "mounted partitions" in result.output.lower()
+
+
 def test_install_runs_environment_preflight_by_default(
     tmp_path: Path, mocker: MockerFixture
 ) -> None:

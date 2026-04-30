@@ -20,7 +20,7 @@ from getarch.execution.real_runner import RealRunner
 from getarch.execution.runner import CommandRunner
 from getarch.installers.base import PlannedStepExecutor
 from getarch.installers.confirmation import require_destructive_confirmation
-from getarch.installers.preflight import RuntimePreflightStep
+from getarch.installers.preflight import DiskBusyGuardStep, RuntimePreflightStep
 from getarch.planning.planner import Planner
 from getarch.planning.rendering import render_text
 from getarch.system.block_devices import LsblkBlockDevices
@@ -104,6 +104,13 @@ def run(
             force=force,
         )
         steps: list[object] = []
+        if not dry_run:
+            steps.append(
+                DiskBusyGuardStep(
+                    block_devices=LsblkBlockDevices(runner=RealRunner()),
+                    target_disk_path=cfg.disk.path,
+                ),
+            )
         if not skip_runtime_preflight and not dry_run:
             steps.append(RuntimePreflightStep())
         steps.extend(PlannedStepExecutor(planned=s) for s in plan.steps)

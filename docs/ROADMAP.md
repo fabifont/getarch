@@ -34,9 +34,12 @@ v2.0.0.
 
 ### Disk safety
 * **Status:** done. `LsblkBlockDevices.target_disk_busy` walks the lsblk tree
-  for live mountpoints; `preflight_environment` refuses mounted target
-  disks; `require_destructive_confirmation` prints the mountpoints in the
-  confirmation summary when present.
+  for live mountpoints. `preflight_environment` refuses mounted target
+  disks during the static check; `require_destructive_confirmation` prints
+  the mountpoints in the confirmation summary when present;
+  `DiskBusyGuardStep` repeats the lsblk-fresh check immediately before the
+  first destructive step and cannot be bypassed by
+  `--skip-environment-preflight`, `--yes`, or `--force`.
 
 ## P1 — required for a complete base installer
 
