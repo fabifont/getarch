@@ -67,10 +67,15 @@ ignore = [
     "S101",
     "ISC001",
     "COM812",
+    "TC001",   # don't push first-party imports into TYPE_CHECKING
+    "TC003",   # same for stdlib
+    "TC006",   # quotes around runtime cast()
+    "A005",    # internal modules named `logging`/`errors` shadow stdlib by name only
+    "A004",    # `EnvironmentError` is a deliberate stdlib name in our hierarchy
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ANN", "PLR2004", "S105", "S106", "ARG001", "ARG002"]
+"tests/**" = ["ANN", "PLR2004", "S105", "S106", "ARG001", "ARG002", "SIM300", "TC002"]
 "getarch/cli/**" = ["TRY003"]
 
 [tool.ruff.lint.isort]
