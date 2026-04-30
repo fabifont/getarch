@@ -10,6 +10,8 @@ from pathlib import Path
 class FilesystemKind(StrEnum):
     EXT4 = "ext4"
     BTRFS = "btrfs"
+    XFS = "xfs"
+    F2FS = "f2fs"
 
 
 class SwapKind(StrEnum):

@@ -8,6 +8,8 @@ from enum import StrEnum
 
 class BootloaderKind(StrEnum):
     SYSTEMD_BOOT = "systemd-boot"
+    GRUB = "grub"
+    UKI = "uki"
 
 
 @dataclass(frozen=True, slots=True)

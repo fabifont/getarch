@@ -36,7 +36,7 @@ _DEFAULT_BTRFS_SUBVOLS: list[BtrfsSubvolumeConfig] = [
 
 
 class FilesystemConfig(_Frozen):
-    kind: Literal["ext4", "btrfs"]
+    kind: Literal["ext4", "btrfs", "xfs", "f2fs"]
     label: str = "system"
     mount_options: list[str] = Field(default_factory=list)
     subvolumes: list[BtrfsSubvolumeConfig] = Field(default_factory=list)
@@ -45,7 +45,7 @@ class FilesystemConfig(_Frozen):
     def _btrfs_defaults(self) -> FilesystemConfig:
         if self.kind == "btrfs" and not self.subvolumes:
             object.__setattr__(self, "subvolumes", list(_DEFAULT_BTRFS_SUBVOLS))
-        if self.kind == "ext4" and self.subvolumes:
+        if self.kind != "btrfs" and self.subvolumes:
             raise ValueError("subvolumes only valid for btrfs")
         return self
 
@@ -54,6 +54,9 @@ class EncryptionConfig(_Frozen):
     kind: Literal["none", "luks2"] = "none"
     password: str | None = None
     mapper_name: str = "system"
+    tpm2_unlock: bool = False
+    fido2_unlock: bool = False
+    header_path: str | None = None
 
     @model_validator(mode="after")
     def _password_required(self) -> EncryptionConfig:
@@ -61,12 +64,21 @@ class EncryptionConfig(_Frozen):
             raise ValueError(
                 "luks2 requires a password (use prompt or secret-file in future)",
             )
+        if self.kind == "none" and (
+            self.tpm2_unlock or self.fido2_unlock or self.header_path
+        ):
+            raise ValueError(
+                "tpm2_unlock/fido2_unlock/header_path require encryption.kind='luks2'",
+            )
+        if self.tpm2_unlock and self.fido2_unlock:
+            raise ValueError("set at most one of tpm2_unlock or fido2_unlock")
         return self
 
 
 class SwapConfig(_Frozen):
-    kind: Literal["none", "partition", "swapfile"] = "none"
+    kind: Literal["none", "partition", "swapfile", "zram"] = "none"
     size_mib: int | None = Field(default=None, ge=128)
+    zram_size_mib: int | None = Field(default=None, ge=64)
 
     @model_validator(mode="after")
     def _size_required(self) -> SwapConfig:
@@ -84,15 +96,21 @@ class MicrocodeConfig(_Frozen):
 
 
 class BootloaderConfig(_Frozen):
-    kind: Literal["systemd-boot"] = "systemd-boot"
+    kind: Literal["systemd-boot", "grub", "uki"] = "systemd-boot"
     entry_id: str = "arch"
     timeout_seconds: int = Field(default=5, ge=0, le=120)
     extra_kernel_params: list[str] = Field(default_factory=list)
 
 
 class InitramfsConfig(_Frozen):
-    generator: Literal["mkinitcpio"] = "mkinitcpio"
-    hooks: list[str] = Field(min_length=1)
+    generator: Literal["mkinitcpio", "dracut"] = "mkinitcpio"
+    hooks: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _hooks_required_for_mkinitcpio(self) -> InitramfsConfig:
+        if self.generator == "mkinitcpio" and not self.hooks:
+            raise ValueError("initramfs.hooks must be non-empty for mkinitcpio")
+        return self
 
 
 class LocaleConfig(_Frozen):
@@ -102,10 +120,23 @@ class LocaleConfig(_Frozen):
     timezone: str
 
 
+class SystemdNetworkdProfile(_Frozen):
+    name: str = Field(pattern=r"^[a-zA-Z0-9_.-]+$")
+    match: dict[str, str] = Field(default_factory=dict)
+    network: dict[str, str | list[str]] = Field(default_factory=dict)
+
+
+class IwdNetworkConfig(_Frozen):
+    ssid: str
+    psk: str
+
+
 class NetworkConfig(_Frozen):
     hostname: str
     backend: Literal["networkmanager", "systemd-networkd", "iwd"] = "networkmanager"
     extra_packages: list[str] = Field(default_factory=list)
+    systemd_networkd: list[SystemdNetworkdProfile] = Field(default_factory=list)
+    iwd_networks: list[IwdNetworkConfig] = Field(default_factory=list)
 
 
 class ServicesConfig(_Frozen):
@@ -157,6 +188,14 @@ class UsersConfig(_Frozen):
     regular: list[RegularUserConfig] = Field(default_factory=list)
 
 
+class MountpointConfig(_Frozen):
+    partition_label: str = Field(pattern=r"^[a-zA-Z0-9_.-]+$")
+    mountpoint: str = Field(pattern=r"^/.+")
+    filesystem: Literal["ext4", "btrfs", "xfs", "f2fs"]
+    mount_options: list[str] = Field(default_factory=list)
+    create: bool = True
+
+
 class Config(_Frozen):
     version: Literal[1]
     disk: DiskConfig
@@ -174,6 +213,7 @@ class Config(_Frozen):
     services: ServicesConfig
     mirrors: MirrorsConfig
     users: UsersConfig
+    mountpoints: list[MountpointConfig] = Field(default_factory=list)
     reboot: bool = False
 
     @field_validator("packages")
