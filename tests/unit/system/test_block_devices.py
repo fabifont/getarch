@@ -38,3 +38,50 @@ def test_list_disks_handles_missing_model() -> None:
     )
     disks = LsblkBlockDevices(runner=runner).list_disks()
     assert disks[0].model is None
+
+
+_LSBLK_BUSY_JSON = """
+{
+   "blockdevices": [
+      {"name":"sda","mountpoints":[null],
+       "children":[
+          {"name":"sda1","mountpoints":["/boot"]},
+          {"name":"sda2","mountpoints":["/"]}
+       ]
+      }
+   ]
+}
+"""
+
+_LSBLK_CLEAN_JSON = """
+{
+   "blockdevices": [
+      {"name":"sdb","mountpoints":[null],
+       "children":[{"name":"sdb1","mountpoints":[null]}]
+      }
+   ]
+}
+"""
+
+
+def test_target_disk_busy_returns_mountpoints() -> None:
+    runner = FakeRunner(
+        responses={
+            ("lsblk", "-J", "-o", "NAME,MOUNTPOINTS", "/dev/sda"): FakeResponse(
+                stdout=_LSBLK_BUSY_JSON,
+            ),
+        },
+    )
+    mounts = LsblkBlockDevices(runner=runner).target_disk_busy("/dev/sda")
+    assert mounts == ("/boot", "/")
+
+
+def test_target_disk_busy_clean() -> None:
+    runner = FakeRunner(
+        responses={
+            ("lsblk", "-J", "-o", "NAME,MOUNTPOINTS", "/dev/sdb"): FakeResponse(
+                stdout=_LSBLK_CLEAN_JSON,
+            ),
+        },
+    )
+    assert LsblkBlockDevices(runner=runner).target_disk_busy("/dev/sdb") == ()

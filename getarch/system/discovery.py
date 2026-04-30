@@ -10,6 +10,7 @@ from getarch.domain.disk import Disk
 @runtime_checkable
 class BlockDeviceProvider(Protocol):
     def list_disks(self) -> tuple[Disk, ...]: ...
+    def target_disk_busy(self, path: str) -> tuple[str, ...]: ...
 
 
 @runtime_checkable

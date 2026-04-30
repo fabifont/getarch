@@ -41,3 +41,23 @@ class LsblkBlockDevices:
                 ),
             )
         return tuple(disks)
+
+    def target_disk_busy(self, path: str) -> tuple[str, ...]:
+        result = self.runner.run(
+            Command(argv=("lsblk", "-J", "-o", "NAME,MOUNTPOINTS", path)),
+        )
+        try:
+            data: Any = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise DiscoveryError(f"lsblk output is not JSON: {exc}") from exc
+        mounts: list[str] = []
+        self._collect_mounts(data.get("blockdevices", []), mounts)
+        return tuple(mounts)
+
+    @staticmethod
+    def _collect_mounts(entries: Any, sink: list[str]) -> None:
+        for entry in entries or ():
+            for mp in entry.get("mountpoints") or ():
+                if mp:
+                    sink.append(mp)
+            LsblkBlockDevices._collect_mounts(entry.get("children", []), sink)
