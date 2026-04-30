@@ -120,12 +120,15 @@ class Planner:
         efi_partition: str,
         mount_root: Path,
     ) -> tuple[PlannedStep, PlannedStep]:
-        fs_spec = self._fs_spec(cfg)
+        has_home = "home" in cfg.partitioning.layout
+        fs_spec = self._fs_spec(cfg, drop_home_subvolume=has_home)
+        home_partition = "/dev/disk/by-partlabel/home" if has_home else None
         fs_cmds = build_filesystem_strategy(
             spec=fs_spec,
             root_partition=root_partition,
             efi_partition=efi_partition,
             mount_root=mount_root,
+            home_partition=home_partition,
         ).commands()
         mkfs_cmds = tuple(c for c in fs_cmds if c.argv[0].startswith("mkfs"))
         mount_cmds = tuple(c for c in fs_cmds if c not in mkfs_cmds)
@@ -308,12 +311,13 @@ class Planner:
             description="reboot into the new system",
         )
 
-    def _fs_spec(self, cfg: Config) -> FilesystemSpec:
+    def _fs_spec(self, cfg: Config, *, drop_home_subvolume: bool = False) -> FilesystemSpec:
         if cfg.filesystem.kind == "btrfs":
             opts = tuple(cfg.filesystem.mount_options) or DEFAULT_BTRFS_MOUNT_OPTIONS
             subs = tuple(
                 BtrfsSubvolume(name=s.name, mountpoint=Path(s.mountpoint))
                 for s in cfg.filesystem.subvolumes
+                if not (drop_home_subvolume and s.mountpoint == "/home")
             )
             return FilesystemSpec(
                 kind=FilesystemKind.BTRFS,

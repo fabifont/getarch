@@ -36,6 +36,7 @@ class FilesystemSpec:
     label: str
     mount_options: tuple[str, ...] = field(default_factory=tuple)
     subvolumes: tuple[BtrfsSubvolume, ...] = field(default_factory=tuple)
+    home_label: str = "home"
 
     def __post_init__(self) -> None:
         if self.subvolumes and self.kind is not FilesystemKind.BTRFS:

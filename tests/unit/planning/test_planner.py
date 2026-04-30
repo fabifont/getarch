@@ -139,3 +139,48 @@ def test_planner_skips_swap_step_when_none() -> None:
     cfg = Config.model_validate(EXAMPLES["minimal-ext4"])
     plan = Planner().build(cfg=cfg, disk=_disk(), mount_root=Path("/mnt"))
     assert "swap" not in {s.id for s in plan.steps}
+
+
+def test_planner_with_home_partition_layout_btrfs_drops_home_subvol() -> None:
+    cfg_dict = {
+        **EXAMPLES["minimal-ext4"],
+        "filesystem": {"kind": "btrfs", "label": "system"},
+        "partitioning": {
+            "layout": "efi-home-root",
+            "efi_size_mib": 512,
+            "home_size_mib": 4096,
+        },
+        "initramfs": {
+            "generator": "mkinitcpio",
+            "hooks": [
+                "base",
+                "udev",
+                "autodetect",
+                "modconf",
+                "block",
+                "filesystems",
+                "fsck",
+            ],
+        },
+    }
+    plan = Planner().build(
+        cfg=Config.model_validate(cfg_dict),
+        disk=_disk(),
+        mount_root=Path("/mnt"),
+    )
+    fs_step = next(s for s in plan.steps if s.id == "filesystems")
+    argvs = [c.argv for c in fs_step.commands]
+    assert ("mkfs.btrfs", "-f", "-L", "home", "/dev/disk/by-partlabel/home") in argvs
+    # @home subvolume must be dropped (separate filesystem now)
+    assert all(
+        not (a[:3] == ("btrfs", "subvolume", "create") and a[3].endswith("@home"))
+        for a in argvs
+    )
+
+
+def test_planner_efi_root_layout_no_home_partition_commands() -> None:
+    cfg = Config.model_validate(EXAMPLES["minimal-ext4"])
+    plan = Planner().build(cfg=cfg, disk=_disk(), mount_root=Path("/mnt"))
+    fs_step = next(s for s in plan.steps if s.id == "filesystems")
+    rendered = " ".join(arg for cmd in fs_step.commands for arg in cmd.argv)
+    assert "by-partlabel/home" not in rendered

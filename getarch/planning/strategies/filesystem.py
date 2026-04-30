@@ -15,9 +15,10 @@ class Ext4Strategy:
     root_partition: str
     efi_partition: str
     mount_root: Path
+    home_partition: str | None = None
 
     def commands(self) -> tuple[Command, ...]:
-        return (
+        cmds: list[Command] = [
             Command(
                 argv=("mkfs.fat", "-F", "32", "-n", "EFI", self.efi_partition),
                 description="create FAT32 EFI filesystem",
@@ -26,19 +27,52 @@ class Ext4Strategy:
                 argv=("mkfs.ext4", "-F", "-L", self.spec.label, self.root_partition),
                 description=f"create ext4 filesystem labeled {self.spec.label}",
             ),
-            Command(
-                argv=("mount", self.root_partition, str(self.mount_root)),
-                description="mount root filesystem",
-            ),
-            Command(
-                argv=("mkdir", "-p", str(self.mount_root / "boot")),
-                description="create /boot mountpoint",
-            ),
-            Command(
-                argv=("mount", self.efi_partition, str(self.mount_root / "boot")),
-                description="mount EFI filesystem at /boot",
+        ]
+        if self.home_partition:
+            cmds.append(
+                Command(
+                    argv=(
+                        "mkfs.ext4",
+                        "-F",
+                        "-L",
+                        self.spec.home_label,
+                        self.home_partition,
+                    ),
+                    description=(
+                        f"create ext4 /home filesystem labeled {self.spec.home_label}"
+                    ),
+                ),
+            )
+        cmds.extend(
+            (
+                Command(
+                    argv=("mount", self.root_partition, str(self.mount_root)),
+                    description="mount root filesystem",
+                ),
+                Command(
+                    argv=("mkdir", "-p", str(self.mount_root / "boot")),
+                    description="create /boot mountpoint",
+                ),
+                Command(
+                    argv=("mount", self.efi_partition, str(self.mount_root / "boot")),
+                    description="mount EFI filesystem at /boot",
+                ),
             ),
         )
+        if self.home_partition:
+            cmds.extend(
+                (
+                    Command(
+                        argv=("mkdir", "-p", str(self.mount_root / "home")),
+                        description="create /home mountpoint",
+                    ),
+                    Command(
+                        argv=("mount", self.home_partition, str(self.mount_root / "home")),
+                        description="mount /home filesystem",
+                    ),
+                ),
+            )
+        return tuple(cmds)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +81,7 @@ class BtrfsStrategy:
     root_partition: str
     efi_partition: str
     mount_root: Path
+    home_partition: str | None = None
 
     def commands(self) -> tuple[Command, ...]:
         cmds: list[Command] = [
@@ -56,13 +91,30 @@ class BtrfsStrategy:
             ),
             Command(
                 argv=("mkfs.btrfs", "-f", "-L", self.spec.label, self.root_partition),
-                description="create btrfs filesystem",
+                description="create btrfs root filesystem",
             ),
+        ]
+        if self.home_partition:
+            cmds.append(
+                Command(
+                    argv=(
+                        "mkfs.btrfs",
+                        "-f",
+                        "-L",
+                        self.spec.home_label,
+                        self.home_partition,
+                    ),
+                    description=(
+                        f"create btrfs /home filesystem labeled {self.spec.home_label}"
+                    ),
+                ),
+            )
+        cmds.append(
             Command(
                 argv=("mount", self.root_partition, str(self.mount_root)),
                 description="mount btrfs root for subvolume creation",
             ),
-        ]
+        )
         for sv in self.spec.subvolumes:
             cmds.append(
                 Command(
@@ -118,6 +170,19 @@ class BtrfsStrategy:
                 description="mount EFI at /boot",
             ),
         )
+        if self.home_partition:
+            cmds.append(
+                Command(
+                    argv=("mkdir", "-p", str(self.mount_root / "home")),
+                    description="create /home mountpoint",
+                ),
+            )
+            cmds.append(
+                Command(
+                    argv=("mount", self.home_partition, str(self.mount_root / "home")),
+                    description="mount /home filesystem",
+                ),
+            )
         return tuple(cmds)
 
 
@@ -127,7 +192,20 @@ def build_filesystem_strategy(
     root_partition: str,
     efi_partition: str,
     mount_root: Path,
+    home_partition: str | None = None,
 ) -> Ext4Strategy | BtrfsStrategy:
     if spec.kind is FilesystemKind.EXT4:
-        return Ext4Strategy(spec, root_partition, efi_partition, mount_root)
-    return BtrfsStrategy(spec, root_partition, efi_partition, mount_root)
+        return Ext4Strategy(
+            spec=spec,
+            root_partition=root_partition,
+            efi_partition=efi_partition,
+            mount_root=mount_root,
+            home_partition=home_partition,
+        )
+    return BtrfsStrategy(
+        spec=spec,
+        root_partition=root_partition,
+        efi_partition=efi_partition,
+        mount_root=mount_root,
+        home_partition=home_partition,
+    )

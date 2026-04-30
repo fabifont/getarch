@@ -5,7 +5,11 @@ from getarch.domain.filesystem import (
     FilesystemKind,
     FilesystemSpec,
 )
-from getarch.planning.strategies.filesystem import build_filesystem_strategy
+from getarch.planning.strategies.filesystem import (
+    BtrfsStrategy,
+    Ext4Strategy,
+    build_filesystem_strategy,
+)
 
 
 def test_ext4_emits_mkfs_and_mount() -> None:
@@ -53,3 +57,39 @@ def test_efi_mount_always_emitted() -> None:
     ).commands()
     rendered = " ".join(arg for c in cmds for arg in c.argv)
     assert "/mnt/boot" in rendered
+
+
+def test_ext4_with_home_partition_creates_and_mounts_it() -> None:
+    spec = FilesystemSpec(kind=FilesystemKind.EXT4, label="system")
+    strat = Ext4Strategy(
+        spec=spec,
+        root_partition="/dev/disk/by-partlabel/system",
+        efi_partition="/dev/disk/by-partlabel/EFI",
+        mount_root=Path("/mnt"),
+        home_partition="/dev/disk/by-partlabel/home",
+    )
+    argvs = [c.argv for c in strat.commands()]
+    assert ("mkfs.ext4", "-F", "-L", "home", "/dev/disk/by-partlabel/home") in argvs
+    assert ("mkdir", "-p", "/mnt/home") in argvs
+    assert ("mount", "/dev/disk/by-partlabel/home", "/mnt/home") in argvs
+
+
+def test_btrfs_with_home_partition_creates_separate_filesystem() -> None:
+    spec = FilesystemSpec(
+        kind=FilesystemKind.BTRFS,
+        label="system",
+        subvolumes=(
+            BtrfsSubvolume(name="@", mountpoint=Path("/")),
+            BtrfsSubvolume(name="@snapshots", mountpoint=Path("/.snapshots")),
+        ),
+    )
+    strat = BtrfsStrategy(
+        spec=spec,
+        root_partition="/dev/disk/by-partlabel/system",
+        efi_partition="/dev/disk/by-partlabel/EFI",
+        mount_root=Path("/mnt"),
+        home_partition="/dev/disk/by-partlabel/home",
+    )
+    argvs = [c.argv for c in strat.commands()]
+    assert ("mkfs.btrfs", "-f", "-L", "home", "/dev/disk/by-partlabel/home") in argvs
+    assert ("mount", "/dev/disk/by-partlabel/home", "/mnt/home") in argvs
