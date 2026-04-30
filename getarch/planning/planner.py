@@ -26,7 +26,7 @@ from getarch.planning.strategies.filesystem import build_filesystem_strategy
 from getarch.planning.strategies.initramfs import build_initramfs_strategy
 from getarch.planning.strategies.mirrors import build_mirror_strategy
 from getarch.planning.strategies.partitioning import SgdiskStrategy
-from getarch.planning.strategies.swap import SwapfileStrategy
+from getarch.planning.strategies.swap import SwapfileStrategy, ZramStrategy
 
 _PLAN_VERSION = "1"
 
@@ -169,6 +169,8 @@ class Planner:
             pkgs.append(ucode)
         if cfg.network.backend == "networkmanager" and "networkmanager" not in pkgs:
             pkgs.append("networkmanager")
+        if cfg.swap.kind == "zram" and "zram-generator" not in pkgs:
+            pkgs.append("zram-generator")
         return PlannedStep(
             id="packages",
             title="Pacstrap base packages",
@@ -367,23 +369,35 @@ class Planner:
         )
 
     def _swap_step(self, cfg: Config, mount_root: Path) -> PlannedStep | None:
-        if cfg.swap.kind != "swapfile":
-            return None
-        size = cfg.swap.size_mib
-        if size is None:
-            raise PlanError("swap.size_mib required for kind='swapfile'")
-        return PlannedStep(
-            id="swap",
-            title="Create swapfile",
-            phase=StepPhase.SWAP,
-            commands=SwapfileStrategy(
-                size_mib=size,
-                mount_root=mount_root,
-                btrfs=cfg.filesystem.kind == "btrfs",
-            ).commands(),
-            destructive=False,
-            description=f"create {size} MiB swapfile",
-        )
+        if cfg.swap.kind == "swapfile":
+            size = cfg.swap.size_mib
+            if size is None:
+                raise PlanError("swap.size_mib required for kind='swapfile'")
+            return PlannedStep(
+                id="swap",
+                title="Create swapfile",
+                phase=StepPhase.SWAP,
+                commands=SwapfileStrategy(
+                    size_mib=size,
+                    mount_root=mount_root,
+                    btrfs=cfg.filesystem.kind == "btrfs",
+                ).commands(),
+                destructive=False,
+                description=f"create {size} MiB swapfile",
+            )
+        if cfg.swap.kind == "zram":
+            return PlannedStep(
+                id="swap",
+                title="Configure zram swap",
+                phase=StepPhase.SWAP,
+                commands=ZramStrategy(
+                    mount_root=mount_root,
+                    size_mib=cfg.swap.zram_size_mib,
+                ).commands(),
+                destructive=False,
+                description="write zram-generator.conf for /dev/zram0",
+            )
+        return None
 
     def _mirror_step(self, cfg: Config, mount_root: Path) -> PlannedStep | None:
         strategy = build_mirror_strategy(cfg.mirrors, mount_root)

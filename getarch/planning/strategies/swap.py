@@ -1,10 +1,14 @@
-"""Swapfile creation strategy.
+"""Swap strategies (swapfile, zram).
 
-Per Arch Wiki, btrfs CoW must be disabled on the directory holding the
-swapfile *before* the file exists. Order: ``mkdir``, ``chattr +C`` (btrfs
-only), ``fallocate``, ``chmod``, ``mkswap``, ``swapon``. ``genfstab`` picks
-up the swapon entry from ``/proc/swaps`` so no explicit fstab append is
-needed.
+Swapfile: per Arch Wiki, btrfs CoW must be disabled on the directory
+holding the swapfile *before* the file exists. Order: ``mkdir``,
+``chattr +C`` (btrfs only), ``fallocate``, ``chmod``, ``mkswap``,
+``swapon``. ``genfstab`` picks up the swapon entry from ``/proc/swaps``
+so no explicit fstab append is needed.
+
+zram: we don't activate anything during install. The strategy just installs
+``zram-generator`` and writes ``/etc/systemd/zram-generator.conf``; the
+target system mounts ``/dev/zram0`` automatically on first boot.
 """
 
 from __future__ import annotations
@@ -60,3 +64,29 @@ class SwapfileStrategy:
             ),
         )
         return tuple(cmds)
+
+
+@dataclass(frozen=True, slots=True)
+class ZramStrategy:
+    mount_root: Path
+    size_mib: int | None = None  # None → "min(ram, 8192)" idiom
+
+    def commands(self) -> tuple[Command, ...]:
+        conf_path = self.mount_root / "etc/systemd/zram-generator.conf"
+        size_value = (
+            f"{self.size_mib}MiB"
+            if self.size_mib is not None
+            else "min(ram, 8192)"
+        )
+        conf_text = (
+            "[zram0]\n"
+            f"zram-size = {size_value}\n"
+            "compression-algorithm = zstd\n"
+        )
+        return (
+            Command(
+                argv=("install", "-Dm644", "/dev/stdin", str(conf_path)),
+                input=conf_text,
+                description=f"write {conf_path}",
+            ),
+        )
