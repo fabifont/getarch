@@ -29,6 +29,7 @@ class FirmwareProvider(Protocol):
 @runtime_checkable
 class PacmanProvider(Protocol):
     def package_exists(self, name: str) -> bool: ...
+    def keyring_initialized(self) -> bool: ...
 
 
 @runtime_checkable

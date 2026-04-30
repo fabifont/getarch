@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from getarch.execution.fake_runner import FakeResponse, FakeRunner
@@ -25,3 +27,22 @@ def test_package_name_validation_rejects_shell_metachars() -> None:
     pac = Pacman(runner=runner)
     with pytest.raises(ValueError, match="invalid package name"):
         pac.package_exists("foo; rm -rf /")
+
+
+def test_keyring_initialized_true(tmp_path: Path) -> None:
+    keyring = tmp_path / "pubring.gpg"
+    keyring.write_bytes(b"\x99\x01\x02")
+    pac = Pacman(runner=FakeRunner(), keyring_path=keyring)
+    assert pac.keyring_initialized() is True
+
+
+def test_keyring_initialized_false_missing(tmp_path: Path) -> None:
+    pac = Pacman(runner=FakeRunner(), keyring_path=tmp_path / "missing")
+    assert pac.keyring_initialized() is False
+
+
+def test_keyring_initialized_false_empty(tmp_path: Path) -> None:
+    keyring = tmp_path / "pubring.gpg"
+    keyring.write_bytes(b"")
+    pac = Pacman(runner=FakeRunner(), keyring_path=keyring)
+    assert pac.keyring_initialized() is False
