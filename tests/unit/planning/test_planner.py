@@ -117,3 +117,25 @@ def test_planner_skips_mirrors_step_when_keep() -> None:
     cfg = Config.model_validate(EXAMPLES["minimal-ext4"])
     plan = Planner().build(cfg=cfg, disk=_disk(), mount_root=Path("/mnt"))
     assert "mirrors" not in {s.id for s in plan.steps}
+
+
+def test_planner_emits_swap_step_when_swapfile() -> None:
+    cfg_dict = {
+        **EXAMPLES["minimal-ext4"],
+        "swap": {"kind": "swapfile", "size_mib": 2048},
+    }
+    plan = Planner().build(
+        cfg=Config.model_validate(cfg_dict),
+        disk=_disk(),
+        mount_root=Path("/mnt"),
+    )
+    ids = [s.id for s in plan.steps]
+    assert "swap" in ids
+    swap_idx = ids.index("swap")
+    assert ids.index("mounting") < swap_idx < ids.index("packages")
+
+
+def test_planner_skips_swap_step_when_none() -> None:
+    cfg = Config.model_validate(EXAMPLES["minimal-ext4"])
+    plan = Planner().build(cfg=cfg, disk=_disk(), mount_root=Path("/mnt"))
+    assert "swap" not in {s.id for s in plan.steps}

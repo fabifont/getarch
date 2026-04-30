@@ -26,6 +26,7 @@ from getarch.planning.strategies.filesystem import build_filesystem_strategy
 from getarch.planning.strategies.initramfs import MkinitcpioStrategy
 from getarch.planning.strategies.mirrors import build_mirror_strategy
 from getarch.planning.strategies.partitioning import SgdiskStrategy
+from getarch.planning.strategies.swap import SwapfileStrategy
 
 _PLAN_VERSION = "1"
 
@@ -56,6 +57,10 @@ class Planner:
         efi_partition = "/dev/disk/by-partlabel/EFI"
         fs_steps = self._filesystem_steps(cfg, root_partition, efi_partition, mount_root)
         steps.extend(fs_steps)
+
+        swap_step = self._swap_step(cfg, mount_root)
+        if swap_step is not None:
+            steps.append(swap_step)
 
         mirror_step = self._mirror_step(cfg, mount_root)
         if mirror_step is not None:
@@ -317,6 +322,25 @@ class Planner:
                 subvolumes=subs,
             )
         return FilesystemSpec(kind=FilesystemKind.EXT4, label=cfg.filesystem.label)
+
+    def _swap_step(self, cfg: Config, mount_root: Path) -> PlannedStep | None:
+        if cfg.swap.kind != "swapfile":
+            return None
+        size = cfg.swap.size_mib
+        if size is None:
+            raise PlanError("swap.size_mib required for kind='swapfile'")
+        return PlannedStep(
+            id="swap",
+            title="Create swapfile",
+            phase=StepPhase.SWAP,
+            commands=SwapfileStrategy(
+                size_mib=size,
+                mount_root=mount_root,
+                btrfs=cfg.filesystem.kind == "btrfs",
+            ).commands(),
+            destructive=False,
+            description=f"create {size} MiB swapfile",
+        )
 
     def _mirror_step(self, cfg: Config, mount_root: Path) -> PlannedStep | None:
         strategy = build_mirror_strategy(cfg.mirrors, mount_root)
