@@ -1,3 +1,5 @@
+import pytest
+
 from getarch.domain.kernel import KernelKind, KernelSpec, MicrocodeKind
 
 
@@ -27,3 +29,17 @@ def test_kernelkind_values() -> None:
         "linux-zen",
         "linux-hardened",
     }
+
+
+@pytest.mark.parametrize(
+    ("vendor", "expected"),
+    [
+        ("GenuineIntel", MicrocodeKind.INTEL),
+        ("AuthenticAMD", MicrocodeKind.AMD),
+        ("Hygon Genuine", MicrocodeKind.NONE),
+        ("", MicrocodeKind.NONE),
+        (None, MicrocodeKind.NONE),
+    ],
+)
+def test_microcode_from_cpu_vendor(vendor: str | None, expected: MicrocodeKind) -> None:
+    assert MicrocodeKind.from_cpu_vendor(vendor) is expected

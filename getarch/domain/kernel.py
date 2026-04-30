@@ -28,6 +28,14 @@ class MicrocodeKind(StrEnum):
             case MicrocodeKind.NONE:
                 return None
 
+    @classmethod
+    def from_cpu_vendor(cls, vendor: str | None) -> MicrocodeKind:
+        if vendor == "GenuineIntel":
+            return cls.INTEL
+        if vendor == "AuthenticAMD":
+            return cls.AMD
+        return cls.NONE
+
 
 @dataclass(frozen=True, slots=True)
 class KernelSpec:
