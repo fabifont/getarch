@@ -180,3 +180,23 @@ def test_preflight_fails_when_locale_unsupported() -> None:
 def test_preflight_fails_when_package_missing() -> None:
     with pytest.raises(EnvErr, match="package"):
         _call(pac=_Pac(exists=False))
+
+
+def test_preflight_fails_when_static_mirrorlist_missing() -> None:
+    cfg_dict = dict(EXAMPLES["minimal-ext4"])
+    cfg_dict["mirrors"] = {
+        "strategy": "static",
+        "static_path": "/no/such/file",
+    }
+    cfg = Config.model_validate(cfg_dict)
+    with pytest.raises(EnvErr, match="static mirrorlist"):
+        preflight_environment(
+            cfg,
+            _BD(_disks()),
+            _Env(),
+            _Fw(),
+            _Pac(),
+            _Identity(),
+            _Iso(),
+            _Net(),
+        )

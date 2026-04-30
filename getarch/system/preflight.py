@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from getarch.config.schema.v1 import Config
 from getarch.constants import INTERNET_REACHABILITY_HOST
@@ -44,6 +45,7 @@ def preflight_environment(
     paths, mounts = _assert_disk(cfg, block_devices)
     _assert_locale(cfg, environment)
     _assert_packages(cfg, pacman)
+    _assert_mirrors(cfg)
 
     return EnvironmentReport(
         disks_found=paths,
@@ -118,3 +120,14 @@ def _assert_packages(cfg: Config, pacman: PacmanProvider) -> None:
     for pkg in cfg.packages:
         if not pacman.package_exists(pkg):
             raise _EnvErr(f"package {pkg!r} not found in pacman repos")
+
+
+def _assert_mirrors(cfg: Config) -> None:
+    if cfg.mirrors.strategy != "static":
+        return
+    if not cfg.mirrors.static_path:
+        return
+    if not Path(cfg.mirrors.static_path).is_file():
+        raise _EnvErr(
+            f"static mirrorlist not found: {cfg.mirrors.static_path}",
+        )
