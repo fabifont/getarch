@@ -87,7 +87,12 @@ def run(
         target = next((d for d in disks if d.path.as_posix() == cfg.disk.path), None)
         if target is None:
             raise PlanError(f"target disk {cfg.disk.path} not present")
-        plan = Planner().build(cfg=cfg, disk=target, mount_root=mount_root)
+        plan = Planner().build(
+            cfg=cfg,
+            disk=target,
+            mount_root=mount_root,
+            cpu_vendor=report.cpu_vendor if report else None,
+        )
         console.log(render_text(plan))
         require_destructive_confirmation(
             plan,

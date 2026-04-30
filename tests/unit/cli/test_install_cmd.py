@@ -149,3 +149,48 @@ def test_install_runs_environment_preflight_by_default(
     )
     assert result.exit_code == 0
     assert called["n"] == 1
+
+
+def test_install_passes_cpu_vendor_to_planner(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    mocker.patch(
+        "getarch.cli.commands.install._discover_disks",
+        return_value=(Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**33),),
+    )
+
+    def fake_preflight(*args: object, **kwargs: object) -> EnvironmentReport:
+        del args, kwargs
+        return EnvironmentReport(
+            disks_found={"/dev/sda": 1},
+            cpu_vendor="GenuineIntel",
+            is_uefi=True,
+            is_root=True,
+            is_arch_iso=True,
+            internet_reachable=True,
+            keyring_initialized=True,
+            mountpoints_seen=(),
+        )
+
+    mocker.patch(
+        "getarch.cli.commands.install.preflight_environment",
+        side_effect=fake_preflight,
+    )
+
+    captured: dict[str, object] = {}
+    from getarch.planning.planner import Planner as _RealPlanner
+
+    real_build = _RealPlanner.build
+
+    def spy_build(self: _RealPlanner, **kw: object) -> object:
+        captured.update(kw)
+        return real_build(self, **kw)  # type: ignore[arg-type]
+
+    mocker.patch.object(_RealPlanner, "build", spy_build)
+
+    p = _write(tmp_path)
+    result = CliRunner().invoke(
+        app, ["--no-color", "install", str(p), "--dry-run", "--yes"]
+    )
+    assert result.exit_code == 0
+    assert captured.get("cpu_vendor") == "GenuineIntel"
