@@ -50,3 +50,31 @@ def test_user_says_no_raises() -> None:
         require_destructive_confirmation(
             _plan(), assume_yes=False, force=False, prompt=lambda _: False
         )
+
+
+def test_mounts_summary_in_prompt() -> None:
+    captured: list[str] = []
+
+    def prompt(text: str) -> bool:
+        captured.append(text)
+        return True
+
+    require_destructive_confirmation(
+        _plan(),
+        assume_yes=False,
+        force=False,
+        prompt=prompt,
+        mounts_summary=("/mnt/data", "/srv"),
+    )
+    assert any("/mnt/data" in t and "/srv" in t for t in captured)
+
+
+def test_no_mounts_summary_keeps_existing_prompt() -> None:
+    captured: list[str] = []
+
+    def prompt(text: str) -> bool:
+        captured.append(text)
+        return True
+
+    require_destructive_confirmation(_plan(), assume_yes=False, force=False, prompt=prompt)
+    assert captured and "/mnt/data" not in captured[0]

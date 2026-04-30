@@ -16,11 +16,19 @@ def require_destructive_confirmation(
     assume_yes: bool,
     force: bool,
     prompt: ConfirmFn,
+    mounts_summary: tuple[str, ...] = (),
 ) -> None:
     if assume_yes or force:
         return
     if not plan.has_destructive_steps:
         return
     summary = ", ".join(s.id for s in plan.destructive_steps)
-    if not prompt(f"Plan contains destructive steps ({summary}). Proceed? "):
+    text = f"Plan contains destructive steps ({summary})."
+    if mounts_summary:
+        text += (
+            f" WARNING: target disk has mounted partitions: "
+            f"{', '.join(mounts_summary)}."
+        )
+    text += " Proceed? "
+    if not prompt(text):
         raise _EnvErr("user declined destructive operation")
