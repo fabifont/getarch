@@ -31,8 +31,16 @@ _PLAN_VERSION = "1"
 
 @dataclass(slots=True)
 class Planner:
-    def build(self, *, cfg: Config, disk: Disk, mount_root: Path) -> InstallPlan:
+    def build(
+        self,
+        *,
+        cfg: Config,
+        disk: Disk,
+        mount_root: Path,
+        cpu_vendor: str | None = None,
+    ) -> InstallPlan:
         encrypted = cfg.encryption.kind == "luks2"
+        microcode = self._resolve_microcode(cfg, cpu_vendor)
         steps: list[PlannedStep] = []
 
         steps.append(self._partitioning_step(cfg, disk, encrypted=encrypted))
@@ -48,11 +56,13 @@ class Planner:
         fs_steps = self._filesystem_steps(cfg, root_partition, efi_partition, mount_root)
         steps.extend(fs_steps)
 
-        steps.append(self._packages_step(cfg, mount_root))
+        steps.append(self._packages_step(cfg, mount_root, microcode))
         steps.append(self._fstab_step(mount_root))
         steps.append(self._system_config_step(cfg, mount_root))
         steps.append(self._initramfs_step(cfg, mount_root))
-        steps.append(self._bootloader_step(cfg, mount_root, encrypted=encrypted))
+        steps.append(
+            self._bootloader_step(cfg, mount_root, encrypted=encrypted, microcode=microcode),
+        )
         if cfg.services.enable or cfg.services.timers:
             steps.append(self._services_step(cfg))
         steps.append(self._users_step(cfg))
@@ -128,12 +138,16 @@ class Planner:
         )
         return fs_step, mount_step
 
-    def _packages_step(self, cfg: Config, mount_root: Path) -> PlannedStep:
+    def _packages_step(
+        self,
+        cfg: Config,
+        mount_root: Path,
+        microcode: MicrocodeKind,
+    ) -> PlannedStep:
         pkgs = list(cfg.packages)
-        if cfg.microcode.kind in {"intel", "amd"}:
-            ucode = MicrocodeKind(cfg.microcode.kind).package_name
-            if ucode and ucode not in pkgs:
-                pkgs.append(ucode)
+        ucode = microcode.package_name
+        if ucode and ucode not in pkgs:
+            pkgs.append(ucode)
         if cfg.network.backend == "networkmanager" and "networkmanager" not in pkgs:
             pkgs.append("networkmanager")
         return PlannedStep(
@@ -193,9 +207,15 @@ class Planner:
             description="write hooks snippet and run mkinitcpio",
         )
 
-    def _bootloader_step(self, cfg: Config, mount_root: Path, *, encrypted: bool) -> PlannedStep:
+    def _bootloader_step(
+        self,
+        cfg: Config,
+        mount_root: Path,
+        *,
+        encrypted: bool,
+        microcode: MicrocodeKind,
+    ) -> PlannedStep:
         rootflags = "rootflags=subvol=@" if cfg.filesystem.kind == "btrfs" else None
-        microcode = self._microcode(cfg)
         bl_spec = BootloaderSpec(
             kind=BootloaderKind.SYSTEMD_BOOT,
             entry_id=cfg.bootloader.entry_id,
@@ -294,12 +314,14 @@ class Planner:
             )
         return FilesystemSpec(kind=FilesystemKind.EXT4, label=cfg.filesystem.label)
 
-    def _microcode(self, cfg: Config) -> MicrocodeKind:
+    def _resolve_microcode(self, cfg: Config, cpu_vendor: str | None) -> MicrocodeKind:
         if cfg.microcode.kind == "intel":
             return MicrocodeKind.INTEL
         if cfg.microcode.kind == "amd":
             return MicrocodeKind.AMD
-        return MicrocodeKind.NONE
+        if cfg.microcode.kind == "none":
+            return MicrocodeKind.NONE
+        return MicrocodeKind.from_cpu_vendor(cpu_vendor)
 
     def _system_config_commands(self, cfg: Config, mount_root: Path) -> tuple[Command, ...]:
         return (

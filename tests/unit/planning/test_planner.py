@@ -46,3 +46,50 @@ def test_destructive_steps_flagged() -> None:
     assert plan.has_destructive_steps
     destructive_ids = {s.id for s in plan.destructive_steps}
     assert "partitioning" in destructive_ids
+
+
+def test_planner_microcode_auto_intel_appends_package() -> None:
+    plan = Planner().build(
+        cfg=Config.model_validate(EXAMPLES["minimal-ext4"]),
+        disk=_disk(),
+        mount_root=Path("/mnt"),
+        cpu_vendor="GenuineIntel",
+    )
+    pkgs_step = next(s for s in plan.steps if s.id == "packages")
+    assert "intel-ucode" in pkgs_step.commands[0].argv
+
+
+def test_planner_microcode_auto_amd_appends_package() -> None:
+    plan = Planner().build(
+        cfg=Config.model_validate(EXAMPLES["minimal-ext4"]),
+        disk=_disk(),
+        mount_root=Path("/mnt"),
+        cpu_vendor="AuthenticAMD",
+    )
+    pkgs_step = next(s for s in plan.steps if s.id == "packages")
+    assert "amd-ucode" in pkgs_step.commands[0].argv
+
+
+def test_planner_microcode_auto_unknown_skips() -> None:
+    plan = Planner().build(
+        cfg=Config.model_validate(EXAMPLES["minimal-ext4"]),
+        disk=_disk(),
+        mount_root=Path("/mnt"),
+        cpu_vendor=None,
+    )
+    pkgs_step = next(s for s in plan.steps if s.id == "packages")
+    assert "intel-ucode" not in pkgs_step.commands[0].argv
+    assert "amd-ucode" not in pkgs_step.commands[0].argv
+
+
+def test_planner_microcode_explicit_overrides_vendor() -> None:
+    cfg_dict = {**EXAMPLES["minimal-ext4"], "microcode": {"kind": "amd"}}
+    plan = Planner().build(
+        cfg=Config.model_validate(cfg_dict),
+        disk=_disk(),
+        mount_root=Path("/mnt"),
+        cpu_vendor="GenuineIntel",
+    )
+    pkgs_step = next(s for s in plan.steps if s.id == "packages")
+    assert "amd-ucode" in pkgs_step.commands[0].argv
+    assert "intel-ucode" not in pkgs_step.commands[0].argv
