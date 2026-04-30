@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 from getarch.cli.app import app
 from getarch.config.examples import EXAMPLES
 from getarch.domain.disk import Disk, DiskPath
+from getarch.planning.planner import Planner as _RealPlanner
 from getarch.system.preflight import EnvironmentReport
 
 
@@ -178,8 +179,6 @@ def test_install_passes_cpu_vendor_to_planner(
     )
 
     captured: dict[str, object] = {}
-    from getarch.planning.planner import Planner as _RealPlanner
-
     real_build = _RealPlanner.build
 
     def spy_build(self: _RealPlanner, **kw: object) -> object:

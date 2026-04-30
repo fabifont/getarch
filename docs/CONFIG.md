@@ -53,6 +53,13 @@ This document describes every field in v1.
 swap. `home_size_mib` may be omitted to let `/home` use the rest of the disk
 (root takes a slice).
 
+### Separate `/home`
+
+When `layout` is `efi-home-root` or `efi-swap-home-root`, the planner
+creates a second filesystem of the same kind as root on the home partition
+and mounts it at `/home`. For btrfs roots, the default `@home` subvolume is
+omitted because `/home` lives on the standalone filesystem.
+
 ## `filesystem`
 
 ext4:
@@ -99,8 +106,11 @@ validation enforces this. The mapper name defaults to `system`.
 ## `swap`
 
 * `{"kind": "none"}` — no swap.
-* `{"kind": "partition", "size_mib": 4096}` — needs a layout that includes swap.
-* `{"kind": "swapfile", "size_mib": 4096}` — created during install.
+* `{"kind": "partition", "size_mib": 4096}` — needs a layout that includes
+  swap.
+* `{"kind": "swapfile", "size_mib": 4096}` — created during install at
+  `/swap/swapfile`. On btrfs, CoW is disabled on `/swap` before the file is
+  allocated. `genfstab` picks up the swapon entry from `/proc/swaps`.
 
 ## `kernel`
 
@@ -109,8 +119,10 @@ The chosen kernel package **must** appear in `packages`.
 
 ## `microcode`
 
-`auto` (default — runtime detection), `intel`, `amd`, `none`. Explicit
-selection appends `intel-ucode` or `amd-ucode` to the pacstrap list and
+`auto` (default), `intel`, `amd`, `none`. Under `auto`, the planner reads
+`cpu_vendor` from the environment preflight (`/proc/cpuinfo`) and appends
+`intel-ucode` or `amd-ucode` accordingly; unknown vendors fall back to
+`none`. Explicit `intel`/`amd` overrides the discovered vendor and
 references the matching `*.img` from the bootloader entry.
 
 ## `bootloader`
@@ -181,10 +193,14 @@ Both lists are passed to `systemctl enable` in chroot.
 ## `mirrors`
 
 * `{"strategy": "keep"}` (default) — leave the live ISO mirrorlist alone.
-* `{"strategy": "reflector", "reflector_args": ["--country", "Italy"]}` —
-  run reflector. *(Plumbing in roadmap.)*
-* `{"strategy": "static", "static_path": "/path/to/mirrorlist"}` —
-  copy a static mirrorlist into the target. *(Plumbing in roadmap.)*
+* `{"strategy": "reflector", "reflector_args": ["--country", "Italy",
+  "--protocol", "https", "--sort", "rate"]}` — runs `reflector --save
+  /etc/pacman.d/mirrorlist <args>` before pacstrap. `reflector_args` must
+  not be empty (semantic validator refuses empty lists).
+* `{"strategy": "static", "static_path": "/path/to/mirrorlist"}` — copies
+  the file into `/etc/pacman.d/mirrorlist` on the live ISO before
+  pacstrap. The file must exist on the live ISO (preflight refuses if
+  missing).
 
 ## `users`
 

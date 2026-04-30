@@ -44,41 +44,25 @@ v2.0.0.
 ## P1 — required for a complete base installer
 
 ### Microcode auto-detect → planner injection
-* **Status:** partial — explicit `intel`/`amd` works. `auto` falls through
-  to "no microcode".
-* **Plan:** in `Planner._microcode`, inspect `IsoEnvironment.cpu_vendor()`
-  when `cfg.microcode.kind == "auto"` and append the right `*-ucode`
-  package + bootloader initrd.
-* **Modules:** `getarch/planning/planner.py`, `getarch/system/environment.py`.
-* **Tests:** fixture cpuinfo files (Intel, AMD, none).
-* **Risks:** missing ucode silently leaves the system without microcode patches.
+* **Status:** done. `MicrocodeKind.from_cpu_vendor` resolves `auto` against
+  `EnvironmentReport.cpu_vendor`; planner injects the package and
+  bootloader initrd line.
 
 ### Mirror configuration plumbing
-* **Status:** schema only. `reflector` and `static` strategies are accepted
-  but produce no commands.
-* **Plan:** new `mirrors` step in the planner that runs `reflector` (with
-  validated args) or `cp` of a static mirrorlist into `<mount>/etc/pacman.d/
-  mirrorlist` *before* pacstrap.
-* **Modules:** `getarch/planning/planner.py`, possibly
-  `getarch/installers/mirrors.py`.
-* **Tests:** golden snapshot for each strategy.
+* **Status:** done. `ReflectorStrategy` and `StaticMirrorlistStrategy` emit
+  a single `mirrors` step before pacstrap; preflight refuses a missing
+  static mirrorlist; semantic validator rejects empty `reflector_args`.
 
 ### Swapfile creation
-* **Status:** schema only.
-* **Plan:** new step (after `mounting`, before `packages`) that runs
-  `dd`/`fallocate`, `chmod 600`, `mkswap`, `swapon`, then appends an fstab
-  entry. For btrfs, set `chattr +C` on the directory holding the swapfile.
-* **Modules:** `getarch/planning/planner.py`.
-* **Tests:** golden snapshot for swapfile vs swap partition.
+* **Status:** done. `SwapfileStrategy` runs `mkdir`, optional `chattr +C`
+  for btrfs, `fallocate`, `chmod 600`, `mkswap`, `swapon`. `genfstab`
+  records the entry from `/proc/swaps`.
 
 ### Separate `/home` partition
-* **Status:** schema layouts include `efi-home-root` and
-  `efi-swap-home-root`. `SgdiskStrategy` already emits the partition.
-  Filesystem creation and mount need to wire the second partition into
-  `Ext4Strategy` / `BtrfsStrategy`.
-* **Modules:** `getarch/planning/strategies/filesystem.py`,
-  `getarch/planning/planner.py`.
-* **Tests:** layout matrix in planner tests.
+* **Status:** done. `Ext4Strategy` and `BtrfsStrategy` create and mount a
+  separate `/home` filesystem when the layout includes `home`; the btrfs
+  `@home` subvolume is dropped in that case so `/home` lives on the
+  standalone filesystem.
 
 ### Regular user creation with sudo + hashed passwords
 * **Status:** done.
