@@ -21,7 +21,17 @@ def test_install_dry_run_records_no_subprocess(tmp_path: Path, mocker: MockerFix
         return_value=(Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**33),),
     )
     p = _write(tmp_path)
-    result = CliRunner().invoke(app, ["--no-color", "install", str(p), "--dry-run", "--yes"])
+    result = CliRunner().invoke(
+        app,
+        [
+            "--no-color",
+            "install",
+            str(p),
+            "--dry-run",
+            "--yes",
+            "--skip-environment-preflight",
+        ],
+    )
     assert result.exit_code == 0
     assert "dry-run" in result.output.lower()
 
@@ -32,7 +42,70 @@ def test_install_without_yes_or_force_refuses(tmp_path: Path, mocker: MockerFixt
         return_value=(Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**33),),
     )
     p = _write(tmp_path)
-    result = CliRunner().invoke(app, ["--no-color", "install", str(p)], input="n\n")
+    result = CliRunner().invoke(
+        app,
+        ["--no-color", "install", str(p), "--skip-environment-preflight"],
+        input="n\n",
+    )
     assert result.exit_code == 2
     output = result.output.lower()
     assert "declined" in output or "cancel" in output
+
+
+def test_install_skip_environment_preflight_warns(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    mocker.patch(
+        "getarch.cli.commands.install._discover_disks",
+        return_value=(Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**33),),
+    )
+    p = _write(tmp_path)
+    result = CliRunner().invoke(
+        app,
+        [
+            "--no-color",
+            "install",
+            str(p),
+            "--dry-run",
+            "--yes",
+            "--skip-environment-preflight",
+        ],
+    )
+    assert result.exit_code == 0
+    out = result.output.lower()
+    assert "skipping environment preflight" in out
+
+
+def test_install_runs_environment_preflight_by_default(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    mocker.patch(
+        "getarch.cli.commands.install._discover_disks",
+        return_value=(Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**33),),
+    )
+    called: dict[str, int] = {"n": 0}
+
+    def fake_preflight(*args: object, **kwargs: object):
+        called["n"] += 1
+        from getarch.system.preflight import EnvironmentReport
+
+        return EnvironmentReport(
+            disks_found={"/dev/sda": 1},
+            cpu_vendor="GenuineIntel",
+            is_uefi=True,
+            is_root=True,
+            is_arch_iso=True,
+            internet_reachable=True,
+            keyring_initialized=True,
+            mountpoints_seen=(),
+        )
+
+    mocker.patch(
+        "getarch.cli.commands.install.preflight_environment", side_effect=fake_preflight
+    )
+    p = _write(tmp_path)
+    result = CliRunner().invoke(
+        app, ["--no-color", "install", str(p), "--dry-run", "--yes"]
+    )
+    assert result.exit_code == 0
+    assert called["n"] == 1

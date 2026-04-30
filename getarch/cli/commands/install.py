@@ -24,6 +24,13 @@ from getarch.installers.preflight import RuntimePreflightStep
 from getarch.planning.planner import Planner
 from getarch.planning.rendering import render_text
 from getarch.system.block_devices import LsblkBlockDevices
+from getarch.system.environment import IsoEnvironment
+from getarch.system.firmware import EfivarsFirmware
+from getarch.system.identity import OsIdentity
+from getarch.system.iso import OsReleaseIso
+from getarch.system.network import SocketNetwork
+from getarch.system.pacman import Pacman
+from getarch.system.preflight import EnvironmentReport, preflight_environment
 
 
 def _discover_disks() -> tuple[Disk, ...]:
@@ -41,6 +48,10 @@ def run(
     force: bool = typer.Option(False, "--force"),
     mount_root: Path = typer.Option(DEFAULT_MOUNT_ROOT, "--mount-root"),
     skip_runtime_preflight: bool = typer.Option(False, "--skip-runtime-preflight"),
+    skip_environment_preflight: bool = typer.Option(
+        False,
+        "--skip-environment-preflight",
+    ),
 ) -> None:
     """Run the full install pipeline."""
     ctx = click.get_current_context()
@@ -53,6 +64,26 @@ def run(
         cfg = load_config(config)
         validate_semantics(cfg)
         disks = _discover_disks()
+
+        report: EnvironmentReport | None = None
+        if skip_environment_preflight:
+            console.log(
+                "[yellow]skipping environment preflight "
+                "(--skip-environment-preflight)[/yellow]",
+            )
+        else:
+            real = RealRunner()
+            report = preflight_environment(
+                cfg,
+                LsblkBlockDevices(runner=real),
+                IsoEnvironment(runner=real),
+                EfivarsFirmware(),
+                Pacman(runner=real),
+                OsIdentity(),
+                OsReleaseIso(),
+                SocketNetwork(),
+            )
+
         target = next((d for d in disks if d.path.as_posix() == cfg.disk.path), None)
         if target is None:
             raise PlanError(f"target disk {cfg.disk.path} not present")
@@ -63,6 +94,7 @@ def run(
             assume_yes=assume_yes,
             force=force,
             prompt=console.confirm,
+            mounts_summary=report.mountpoints_seen if report else (),
         )
         runner = _build_runner(dry_run=dry_run)
         exec_ctx = ExecutionContext(
