@@ -1,53 +1,115 @@
-[tool.poetry]
+[project]
 name = "getarch"
-version = "1.0.2"
-description = "A simple way to install archlinux"
-authors = ["fabifont <fabio.fontana@mailbox.org>"]
-license = "GPL-3.0"
+version = "2.0.0a0"
+description = "Declarative Arch Linux base-system installer."
 readme = "README.md"
-packages = [{include = "getarch"}]
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Fabio Fontana", email = "fabio.fontana@mailbox.org" }]
+requires-python = ">=3.14"
+keywords = ["arch", "linux", "installer", "automation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Installation/Setup",
+]
+dependencies = [
+    "pydantic>=2.7",
+    "typer>=0.12",
+    "rich>=13.7",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.11,<3.13"
+[project.scripts]
+getarch = "getarch.cli.app:main"
 
-
-[tool.poetry.group.dev.dependencies]
-pre-commit = "^3.3.2"
-flake8 = "^6.0.0"
-black = "^23.3.0"
-pyright = "^1.1.313"
-pyinstaller = "^5.12.0"
+[project.urls]
+Homepage = "https://github.com/fabifont/getarch"
+Repository = "https://github.com/fabifont/getarch"
+Issues = "https://github.com/fabifont/getarch/issues"
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["getarch"]
 
-[tool.black]
-line-length = 88
-target-version = ['py311']
-include = '\.pyi?$'
-exclude = '''
-/(
-    \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | _build
-  | buck-out
-  | build
-  | dist
-)/
-'''
+[dependency-groups]
+dev = [
+    "basedpyright>=1.18",
+    "hypothesis>=6.100",
+    "pytest>=8.2",
+    "pytest-cov>=5.0",
+    "pytest-mock>=3.12",
+    "ruff>=0.6",
+    "syrupy>=4.6",
+]
 
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+src = ["getarch", "tests"]
+extend-exclude = ["test_resources", ".venv"]
 
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-include_trailing_comma = true
-force_grid_wrap = 0
-use_parentheses = true
-ensure_newline_before_comments = true
-line_length = 88
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "B", "C90", "N", "UP", "ANN", "S", "BLE", "A", "C4",
+    "DTZ", "ISC", "ICN", "G", "PIE", "PT", "RET", "SIM", "TID", "TCH", "ARG",
+    "PTH", "ERA", "PD", "PL", "TRY", "RUF",
+]
+ignore = [
+    "ANN401",
+    "PLR0913",
+    "TRY003",
+    "S101",
+    "ISC001",
+    "COM812",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN", "PLR2004", "S105", "S106", "ARG001", "ARG002"]
+"getarch/cli/**" = ["TRY003"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["getarch"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.basedpyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.14"
+pythonPlatform = "Linux"
+include = ["getarch", "tests"]
+exclude = [".venv", "test_resources", "build", "dist"]
+reportMissingTypeStubs = "warning"
+reportImplicitOverride = "error"
+reportUnusedImport = "error"
+reportUnusedVariable = "error"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-config --strict-markers"
+markers = [
+    "integration: requires a running QEMU/Arch ISO environment",
+]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["getarch"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_also = [
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "@overload",
+]

@@ -1,0 +1,13 @@
+name: qemu
+on:
+  workflow_dispatch:
+
+# QEMU smoke test is gated to manual dispatch until the new schema and CLI are
+# wired in (Phase 8 of the rewrite plan rewires this workflow to install via
+# the new uv wheel instead of the legacy PyInstaller binary).
+
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "QEMU smoke test is temporarily disabled; see Phase 8 of the rewrite plan."

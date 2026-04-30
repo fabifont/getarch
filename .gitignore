@@ -74,3 +74,10 @@ cython_debug/
 # Testing
 test_resources/*.iso
 test_resources/*.qcow2
+
+# uv / ruff / basedpyright / coverage
+.uv/
+.ruff_cache/
+.basedpyright/
+coverage.xml
+htmlcov/
