@@ -18,10 +18,18 @@ from getarch.execution.real_runner import RealRunner
 from getarch.planning.planner import Planner
 from getarch.planning.rendering import render_json, render_text
 from getarch.system.block_devices import LsblkBlockDevices
+from getarch.system.environment import IsoEnvironment
 
 
 def _discover_disks() -> tuple[Disk, ...]:
     return LsblkBlockDevices(runner=RealRunner()).list_disks()
+
+
+def _discover_cpu_vendor() -> str | None:
+    try:
+        return IsoEnvironment(runner=RealRunner()).cpu_vendor()
+    except OSError:
+        return None
 
 
 def run(
@@ -42,7 +50,12 @@ def run(
         target = next((d for d in disks if d.path.as_posix() == cfg.disk.path), None)
         if target is None:
             raise PlanError(f"target disk {cfg.disk.path} not present")
-        plan = Planner().build(cfg=cfg, disk=target, mount_root=mount_root)
+        plan = Planner().build(
+            cfg=cfg,
+            disk=target,
+            mount_root=mount_root,
+            cpu_vendor=_discover_cpu_vendor(),
+        )
     except GetarchError as exc:
         console.error(str(exc))
         raise typer.Exit(code=2) from None

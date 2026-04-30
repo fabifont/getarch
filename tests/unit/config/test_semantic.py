@@ -111,3 +111,39 @@ def test_microcode_explicit_intel_passes_with_no_microcode_in_packages() -> None
 
 def test_minimal_valid_config_passes() -> None:
     validate_semantics(_cfg())
+
+
+def test_home_layout_requires_home_size_mib() -> None:
+    cfg = _cfg(
+        partitioning={
+            "layout": "efi-home-root",
+            "efi_size_mib": 512,
+            "home_size_mib": None,
+        },
+    )
+    with pytest.raises(SemanticConfigError, match="home_size_mib"):
+        validate_semantics(cfg)
+
+
+def test_luks_with_home_layout_rejected() -> None:
+    cfg = _cfg(
+        partitioning={
+            "layout": "efi-home-root",
+            "efi_size_mib": 512,
+            "home_size_mib": 4096,
+        },
+        encryption={"kind": "luks2", "password": "x"},
+        filesystem={"kind": "btrfs", "label": "system"},
+        initramfs={
+            "generator": "mkinitcpio",
+            "hooks": ["base", "systemd", "sd-encrypt", "filesystems"],
+        },
+    )
+    with pytest.raises(SemanticConfigError, match="luks2"):
+        validate_semantics(cfg)
+
+
+def test_reflector_requires_non_empty_args() -> None:
+    cfg = _cfg(mirrors={"strategy": "reflector", "reflector_args": []})
+    with pytest.raises(SemanticConfigError, match="reflector_args"):
+        validate_semantics(cfg)

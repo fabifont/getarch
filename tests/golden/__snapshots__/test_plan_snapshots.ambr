@@ -651,6 +651,32 @@
     "destructive": true,
     "steps": [
       {
+        "id": "mirrors",
+        "title": "Configure pacman mirrors",
+        "phase": "mirrors",
+        "destructive": false,
+        "description": "mirrors strategy: reflector",
+        "commands": [
+          {
+            "argv": [
+              "reflector",
+              "--save",
+              "/etc/pacman.d/mirrorlist",
+              "--country",
+              "Italy",
+              "--protocol",
+              "https",
+              "--sort",
+              "rate"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "run reflector to update the live ISO mirrorlist before pacstrap"
+          }
+        ]
+      },
+      {
         "id": "partitioning",
         "title": "Partition disk",
         "phase": "partitioning",
@@ -776,7 +802,7 @@
             "chroot": false,
             "sensitive": false,
             "input": null,
-            "description": "create partition 4 (cryptsystem, 8300)"
+            "description": "create partition 4 (system, 8300)"
           },
           {
             "argv": [
@@ -792,48 +818,13 @@
           {
             "argv": [
               "sgdisk",
-              "--change-name=4:cryptsystem",
+              "--change-name=4:system",
               "/dev/sda"
             ],
             "chroot": false,
             "sensitive": false,
             "input": null,
-            "description": "label partition 4 as cryptsystem"
-          }
-        ]
-      },
-      {
-        "id": "encryption",
-        "title": "Set up LUKS2 root",
-        "phase": "encryption",
-        "destructive": true,
-        "description": "luksFormat then open root partition",
-        "commands": [
-          {
-            "argv": [
-              "cryptsetup",
-              "--batch-mode",
-              "luksFormat",
-              "--type",
-              "luks2",
-              "/dev/disk/by-partlabel/cryptsystem"
-            ],
-            "chroot": false,
-            "sensitive": true,
-            "input": "***",
-            "description": "format LUKS2 container on root partition"
-          },
-          {
-            "argv": [
-              "cryptsetup",
-              "open",
-              "/dev/disk/by-partlabel/cryptsystem",
-              "system"
-            ],
-            "chroot": false,
-            "sensitive": true,
-            "input": "***",
-            "description": "open LUKS2 container as /dev/mapper/system"
+            "description": "label partition 4 as system"
           }
         ]
       },
@@ -864,7 +855,7 @@
               "-f",
               "-L",
               "system",
-              "/dev/mapper/system"
+              "/dev/disk/by-partlabel/system"
             ],
             "chroot": false,
             "sensitive": false,
@@ -896,7 +887,7 @@
           {
             "argv": [
               "mount",
-              "/dev/mapper/system",
+              "/dev/disk/by-partlabel/system",
               "/mnt"
             ],
             "chroot": false,
@@ -954,7 +945,7 @@
               "mount",
               "-o",
               "defaults,x-mount.mkdir,noatime,nodiratime,compress=zstd,space_cache=v2,ssd,subvol=@",
-              "/dev/mapper/system",
+              "/dev/disk/by-partlabel/system",
               "/mnt"
             ],
             "chroot": false,
@@ -978,7 +969,7 @@
               "mount",
               "-o",
               "defaults,x-mount.mkdir,noatime,nodiratime,compress=zstd,space_cache=v2,ssd,subvol=@snapshots",
-              "/dev/mapper/system",
+              "/dev/disk/by-partlabel/system",
               "/mnt/.snapshots"
             ],
             "chroot": false,
@@ -1103,32 +1094,6 @@
             "sensitive": false,
             "input": null,
             "description": "activate swapfile so genfstab records it"
-          }
-        ]
-      },
-      {
-        "id": "mirrors",
-        "title": "Configure pacman mirrors",
-        "phase": "mirrors",
-        "destructive": false,
-        "description": "mirrors strategy: reflector",
-        "commands": [
-          {
-            "argv": [
-              "reflector",
-              "--save",
-              "/etc/pacman.d/mirrorlist",
-              "--country",
-              "Italy",
-              "--protocol",
-              "https",
-              "--sort",
-              "rate"
-            ],
-            "chroot": false,
-            "sensitive": false,
-            "input": null,
-            "description": "run reflector to update the live ISO mirrorlist before pacstrap"
           }
         ]
       },
@@ -1296,7 +1261,7 @@
             ],
             "chroot": false,
             "sensitive": false,
-            "input": "HOOKS=(base systemd autodetect modconf kms keyboard sd-vconsole block sd-encrypt filesystems fsck)\n",
+            "input": "HOOKS=(base udev autodetect modconf block filesystems fsck)\n",
             "description": "write mkinitcpio hooks snippet at /mnt/etc/mkinitcpio.conf.d/10-hooks.conf"
           },
           {
@@ -1344,14 +1309,15 @@
           },
           {
             "argv": [
-              "bash",
-              "-c",
-              "set -euo pipefail\nLUKS_UUID=\"$(blkid -s UUID -o value /dev/disk/by-partlabel/cryptsystem)\"\ninstall -Dm644 /dev/stdin /mnt/boot/loader/entries/arch.conf <<EOF\ntitle Arch Linux\nlinux /vmlinuz-linux\ninitrd /intel-ucode.img\ninitrd /initramfs-linux.img\noptions rd.luks.name=${LUKS_UUID}=system rd.luks.options=discard root=/dev/mapper/system rootflags=subvol=@ rw\nEOF\n"
+              "install",
+              "-Dm644",
+              "/dev/stdin",
+              "/mnt/boot/loader/entries/arch.conf"
             ],
             "chroot": false,
             "sensitive": false,
-            "input": null,
-            "description": "write /mnt/boot/loader/entries/arch.conf with discovered LUKS UUID"
+            "input": "title Arch Linux\nlinux /vmlinuz-linux\ninitrd /intel-ucode.img\ninitrd /initramfs-linux.img\noptions root=LABEL=system rootflags=subvol=@ rw\n",
+            "description": "write /mnt/boot/loader/entries/arch.conf"
           }
         ]
       },
@@ -1392,44 +1358,7 @@
         "phase": "users",
         "destructive": false,
         "description": "set root password and create regular users",
-        "commands": [
-          {
-            "argv": [
-              "useradd",
-              "-m",
-              "-s",
-              "/bin/bash",
-              "-G",
-              "wheel",
-              "alice"
-            ],
-            "chroot": true,
-            "sensitive": false,
-            "input": null,
-            "description": "create user alice"
-          },
-          {
-            "argv": [
-              "chpasswd"
-            ],
-            "chroot": true,
-            "sensitive": true,
-            "input": "***",
-            "description": "set password for alice"
-          },
-          {
-            "argv": [
-              "install",
-              "-Dm440",
-              "/dev/stdin",
-              "/etc/sudoers.d/10-alice"
-            ],
-            "chroot": true,
-            "sensitive": false,
-            "input": "alice ALL=(ALL:ALL) ALL\n",
-            "description": "grant sudo to alice"
-          }
-        ]
+        "commands": []
       },
       {
         "id": "cleanup",
@@ -1438,6 +1367,16 @@
         "destructive": false,
         "description": "umount -R /mnt",
         "commands": [
+          {
+            "argv": [
+              "swapoff",
+              "/mnt/swap/swapfile"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "deactivate swapfile so target filesystem is not busy"
+          },
           {
             "argv": [
               "umount",

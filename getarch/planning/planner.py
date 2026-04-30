@@ -45,6 +45,13 @@ class Planner:
         microcode = self._resolve_microcode(cfg, cpu_vendor)
         steps: list[PlannedStep] = []
 
+        # Mirror configuration runs before any destructive disk work so a
+        # missing reflector binary or bad reflector_args fails fast (the
+        # mirror step only writes to the live ISO mirrorlist anyway).
+        mirror_step = self._mirror_step(cfg, mount_root)
+        if mirror_step is not None:
+            steps.append(mirror_step)
+
         steps.append(self._partitioning_step(cfg, disk, encrypted=encrypted))
         if encrypted:
             steps.append(self._encryption_step(cfg))
@@ -62,9 +69,6 @@ class Planner:
         if swap_step is not None:
             steps.append(swap_step)
 
-        mirror_step = self._mirror_step(cfg, mount_root)
-        if mirror_step is not None:
-            steps.append(mirror_step)
         steps.append(self._packages_step(cfg, mount_root, microcode))
         steps.append(self._fstab_step(mount_root))
         steps.append(self._system_config_step(cfg, mount_root))
@@ -75,7 +79,7 @@ class Planner:
         if cfg.services.enable or cfg.services.timers:
             steps.append(self._services_step(cfg))
         steps.append(self._users_step(cfg))
-        steps.append(self._cleanup_step(mount_root))
+        steps.append(self._cleanup_step(cfg, mount_root))
         if cfg.reboot:
             steps.append(self._reboot_step())
 
@@ -286,17 +290,26 @@ class Planner:
             description="set root password and create regular users",
         )
 
-    def _cleanup_step(self, mount_root: Path) -> PlannedStep:
+    def _cleanup_step(self, cfg: Config, mount_root: Path) -> PlannedStep:
+        cmds: list[Command] = []
+        if cfg.swap.kind == "swapfile":
+            cmds.append(
+                Command(
+                    argv=("swapoff", str(mount_root / "swap/swapfile")),
+                    description="deactivate swapfile so target filesystem is not busy",
+                ),
+            )
+        cmds.append(
+            Command(
+                argv=("umount", "-R", str(mount_root)),
+                description="recursively unmount target",
+            ),
+        )
         return PlannedStep(
             id="cleanup",
             title="Unmount target",
             phase=StepPhase.CLEANUP,
-            commands=(
-                Command(
-                    argv=("umount", "-R", str(mount_root)),
-                    description="recursively unmount target",
-                ),
-            ),
+            commands=tuple(cmds),
             destructive=False,
             description=f"umount -R {mount_root}",
         )

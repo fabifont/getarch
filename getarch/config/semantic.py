@@ -13,6 +13,8 @@ def validate_semantics(cfg: Config) -> None:
     _check_swap_layout(cfg)
     _check_btrfs_subvolumes(cfg)
     _check_mirrors(cfg)
+    _check_home_layout(cfg)
+    _check_luks_home_incompatible(cfg)
 
 
 def _check_kernel_in_packages(cfg: Config) -> None:
@@ -63,4 +65,24 @@ def _check_mirrors(cfg: Config) -> None:
         raise SemanticConfigError(
             "mirrors.strategy='reflector' requires non-empty reflector_args; "
             "consider ['--latest', '20', '--protocol', 'https', '--sort', 'rate']",
+        )
+
+
+def _check_home_layout(cfg: Config) -> None:
+    if "home" in cfg.partitioning.layout and cfg.partitioning.home_size_mib is None:
+        raise SemanticConfigError(
+            f"partitioning.layout={cfg.partitioning.layout!r} requires "
+            "partitioning.home_size_mib (rest-of-disk auto-allocation is not "
+            "implemented yet)",
+        )
+
+
+def _check_luks_home_incompatible(cfg: Config) -> None:
+    if cfg.encryption.kind == "luks2" and "home" in cfg.partitioning.layout:
+        raise SemanticConfigError(
+            "encryption.kind='luks2' with a separate /home partition is not "
+            "supported yet: only the root partition would be encrypted, leaving "
+            "user data on a plaintext /home. Use a layout without 'home' "
+            "(e.g. efi-root or efi-swap-root) and rely on a /home subvolume, "
+            "or wait for encrypted-home support.",
         )

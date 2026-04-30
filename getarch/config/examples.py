@@ -87,7 +87,8 @@ _ENCRYPTED_BTRFS: Final[dict[str, object]] = {
 
 
 _FULL_BTRFS_HOME_SWAP: Final[dict[str, object]] = {
-    **_ENCRYPTED_BTRFS,
+    **_MINIMAL_EXT4,
+    "filesystem": {"kind": "btrfs", "label": "system"},
     "partitioning": {
         "layout": "efi-swap-home-root",
         "efi_size_mib": 512,

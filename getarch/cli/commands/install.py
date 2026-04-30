@@ -66,11 +66,22 @@ def run(
         disks = _discover_disks()
 
         report: EnvironmentReport | None = None
+        cpu_vendor: str | None = None
         if skip_environment_preflight:
             console.log(
                 "[yellow]skipping environment preflight "
                 "(--skip-environment-preflight)[/yellow]",
             )
+            try:
+                cpu_vendor = IsoEnvironment(runner=RealRunner()).cpu_vendor()
+            except OSError:
+                cpu_vendor = None
+            if cfg.microcode.kind == "auto" and cpu_vendor is None:
+                console.log(
+                    "[yellow]warning: microcode=auto with skipped preflight and no "
+                    "cpu_vendor available; no microcode will be installed. Set "
+                    "microcode.kind explicitly to silence this.[/yellow]",
+                )
         else:
             real = RealRunner()
             report = preflight_environment(
@@ -83,6 +94,7 @@ def run(
                 OsReleaseIso(),
                 SocketNetwork(),
             )
+            cpu_vendor = report.cpu_vendor
 
         target = next((d for d in disks if d.path.as_posix() == cfg.disk.path), None)
         if target is None:
@@ -91,7 +103,7 @@ def run(
             cfg=cfg,
             disk=target,
             mount_root=mount_root,
-            cpu_vendor=report.cpu_vendor if report else None,
+            cpu_vendor=cpu_vendor,
         )
         console.log(render_text(plan))
         require_destructive_confirmation(
