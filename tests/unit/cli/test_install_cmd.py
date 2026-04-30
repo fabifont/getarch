@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 from getarch.cli.app import app
 from getarch.config.examples import EXAMPLES
 from getarch.domain.disk import Disk, DiskPath
+from getarch.system.preflight import EnvironmentReport
 
 
 def _write(tmp: Path) -> Path:
@@ -85,10 +86,9 @@ def test_install_runs_environment_preflight_by_default(
     )
     called: dict[str, int] = {"n": 0}
 
-    def fake_preflight(*args: object, **kwargs: object):
+    def fake_preflight(*args: object, **kwargs: object) -> EnvironmentReport:
+        del args, kwargs
         called["n"] += 1
-        from getarch.system.preflight import EnvironmentReport
-
         return EnvironmentReport(
             disks_found={"/dev/sda": 1},
             cpu_vendor="GenuineIntel",

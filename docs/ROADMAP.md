@@ -15,15 +15,10 @@ These exist or are stubbed today; they must work end-to-end before tagging
 v2.0.0.
 
 ### Strict environment preflight
-* **Rationale:** a missing UEFI flag, mounted target disk, or absent
-  pacman keyring leads to data loss.
-* **Implementation notes:** extend `getarch/system/preflight.py` with
-  `is_root()`, `is_arch_iso()` (read `/etc/os-release`), `target_disk_busy()`
-  (`lsblk -nrpo MOUNTPOINT`), `internet_reachable()` (resolve
-  `archlinux.org`), `pacman_keyring_initialized()`.
-* **Modules:** `getarch/system/preflight.py`, `getarch/cli/commands/install.py`.
-* **Tests:** fakes for each provider; assert `EnvironmentError` on each mode.
-* **Risks:** false positives on minimal images. Provide `--skip-runtime-preflight`.
+* **Status:** done. `IdentityProvider`, `IsoProvider`, `NetworkProvider` and
+  the extended `BlockDeviceProvider`/`PacmanProvider` are wired into
+  `preflight_environment`; `--skip-environment-preflight` covers the
+  minimal-image false-positive risk.
 
 ### Destructive confirmation
 * **Status:** done. `getarch/installers/confirmation.py` honours `--yes`/
@@ -38,12 +33,10 @@ v2.0.0.
   inputs.
 
 ### Disk safety
-* **Status:** partial. `DiskPath` rejects partition suffixes and `Disk`
-  surfaces model. **Missing:** refuse target disks with active mounts,
-  surface them in the destructive confirmation summary.
-* **Modules:** `getarch/system/block_devices.py`,
-  `getarch/installers/confirmation.py`.
-* **Tests:** lsblk JSON fixtures with `mountpoints: [...]`.
+* **Status:** done. `LsblkBlockDevices.target_disk_busy` walks the lsblk tree
+  for live mountpoints; `preflight_environment` refuses mounted target
+  disks; `require_destructive_confirmation` prints the mountpoints in the
+  confirmation summary when present.
 
 ## P1 — required for a complete base installer
 

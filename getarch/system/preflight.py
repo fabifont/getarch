@@ -40,6 +40,30 @@ def preflight_environment(
     iso: IsoProvider,
     network: NetworkProvider,
 ) -> EnvironmentReport:
+    _assert_host(identity, iso, firmware, network, pacman)
+    paths, mounts = _assert_disk(cfg, block_devices)
+    _assert_locale(cfg, environment)
+    _assert_packages(cfg, pacman)
+
+    return EnvironmentReport(
+        disks_found=paths,
+        cpu_vendor=environment.cpu_vendor(),
+        is_uefi=True,
+        is_root=True,
+        is_arch_iso=True,
+        internet_reachable=True,
+        keyring_initialized=True,
+        mountpoints_seen=mounts,
+    )
+
+
+def _assert_host(
+    identity: IdentityProvider,
+    iso: IsoProvider,
+    firmware: FirmwareProvider,
+    network: NetworkProvider,
+    pacman: PacmanProvider,
+) -> None:
     if not identity.is_root():
         raise _EnvErr("getarch must run as root (effective uid != 0)")
 
@@ -63,6 +87,11 @@ def preflight_environment(
             "pacman-key --populate archlinux",
         )
 
+
+def _assert_disk(
+    cfg: Config,
+    block_devices: BlockDeviceProvider,
+) -> tuple[dict[str, int], tuple[str, ...]]:
     disks = block_devices.list_disks()
     paths = {d.path.as_posix(): d.size_bytes for d in disks}
     if cfg.disk.path not in paths:
@@ -73,30 +102,19 @@ def preflight_environment(
         raise _EnvErr(
             f"target disk {cfg.disk.path} has mounted partitions: {', '.join(mounts)}",
         )
+    return paths, mounts
 
-    locales = environment.supported_locales()
-    if cfg.locale.locale not in locales:
+
+def _assert_locale(cfg: Config, environment: EnvironmentProvider) -> None:
+    if cfg.locale.locale not in environment.supported_locales():
         raise _EnvErr(f"locale {cfg.locale.locale!r} not supported on this ISO")
-
-    keymaps = environment.keymaps()
-    if cfg.locale.keymap not in keymaps:
+    if cfg.locale.keymap not in environment.keymaps():
         raise _EnvErr(f"keymap {cfg.locale.keymap!r} not available")
-
-    timezones = environment.timezones()
-    if cfg.locale.timezone not in timezones:
+    if cfg.locale.timezone not in environment.timezones():
         raise _EnvErr(f"timezone {cfg.locale.timezone!r} not available")
 
+
+def _assert_packages(cfg: Config, pacman: PacmanProvider) -> None:
     for pkg in cfg.packages:
         if not pacman.package_exists(pkg):
             raise _EnvErr(f"package {pkg!r} not found in pacman repos")
-
-    return EnvironmentReport(
-        disks_found=paths,
-        cpu_vendor=environment.cpu_vendor(),
-        is_uefi=True,
-        is_root=True,
-        is_arch_iso=True,
-        internet_reachable=True,
-        keyring_initialized=True,
-        mountpoints_seen=mounts,
-    )

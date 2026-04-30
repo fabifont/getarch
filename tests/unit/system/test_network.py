@@ -10,7 +10,7 @@ def test_reachable_when_getaddrinfo_succeeds(monkeypatch: pytest.MonkeyPatch) ->
 
     def fake(host: str, port: object, *args: object, **kwargs: object) -> list[object]:
         captured["host"] = host
-        return [("af", "type", "proto", "canon", ("0.0.0.0", 0))]
+        return [("af", "type", "proto", "canon", ("127.0.0.1", 0))]
 
     monkeypatch.setattr(socket, "getaddrinfo", fake)
     assert SocketNetwork().internet_reachable("archlinux.org") is True

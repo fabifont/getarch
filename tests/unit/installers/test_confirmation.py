@@ -77,4 +77,5 @@ def test_no_mounts_summary_keeps_existing_prompt() -> None:
         return True
 
     require_destructive_confirmation(_plan(), assume_yes=False, force=False, prompt=prompt)
-    assert captured and "/mnt/data" not in captured[0]
+    assert captured
+    assert "/mnt/data" not in captured[0]

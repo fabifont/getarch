@@ -210,3 +210,18 @@ Regular users may declare `password` (plain), `hashed_password` (preferred),
 ## `reboot`
 
 `true` adds a final `reboot` step. Default `false`.
+
+## Install command flags
+
+* `--dry-run` — render plan and execute via `DryRunner` (no IO).
+* `--yes` / `-y` — skip the destructive-confirmation prompt.
+* `--force` — skip the destructive-confirmation prompt (alias of `--yes` for
+  scripted automation; the user has explicitly opted out of the gate).
+* `--mount-root <path>` — override the install target mount root (default
+  `/mnt`).
+* `--skip-runtime-preflight` — skip the in-pipeline runtime preflight step
+  (NTP sync, keyring populate). Default off.
+* `--skip-environment-preflight` — skip the *environment* preflight that
+  asserts root, Arch ISO, UEFI, internet, pacman keyring, and a clean target
+  disk. Default off. Useful on minimal images where one of these checks
+  produces a false positive.

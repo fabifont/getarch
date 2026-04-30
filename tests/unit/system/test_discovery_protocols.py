@@ -13,6 +13,10 @@ class _BD:
     def list_disks(self) -> tuple[Disk, ...]:
         return (Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**33),)
 
+    def target_disk_busy(self, path: str) -> tuple[str, ...]:
+        del path
+        return ()
+
 
 class _Env:
     def cpu_vendor(self) -> str | None:
@@ -36,6 +40,9 @@ class _Fw:
 class _Pac:
     def package_exists(self, name: str) -> bool:
         return name == "base"
+
+    def keyring_initialized(self) -> bool:
+        return True
 
 
 def test_protocols_satisfied() -> None:
