@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "disk": {
+    "path": "/dev/sda",
+    "wipe_before": false
+  },
+  "partitioning": {
+    "layout": "efi-root",
+    "efi_size_mib": 512
+  },
+  "filesystem": {
+    "kind": "ext4",
+    "label": "system"
+  },
+  "encryption": {
+    "kind": "none"
+  },
+  "swap": {
+    "kind": "none"
+  },
+  "kernel": {
+    "kind": "linux"
+  },
+  "microcode": {
+    "kind": "auto"
+  },
+  "bootloader": {
+    "kind": "systemd-boot",
+    "timeout_seconds": 5
+  },
+  "initramfs": {
+    "generator": "mkinitcpio",
+    "hooks": [
+      "base",
+      "udev",
+      "autodetect",
+      "modconf",
+      "block",
+      "filesystems",
+      "fsck"
+    ]
+  },
+  "locale": {
+    "lang": "en_US.UTF-8",
+    "locale": "en_US.UTF-8 UTF-8",
+    "keymap": "us",
+    "timezone": "UTC"
+  },
+  "network": {
+    "hostname": "arch",
+    "backend": "networkmanager"
+  },
+  "packages": [
+    "base",
+    "base-devel",
+    "linux",
+    "linux-firmware",
+    "networkmanager",
+    "sudo",
+    "vim"
+  ],
+  "services": {
+    "enable": [
+      "NetworkManager"
+    ],
+    "timers": [
+      "fstrim.timer"
+    ]
+  },
+  "mirrors": {
+    "strategy": "keep"
+  },
+  "users": {
+    "root": {
+      "kind": "prompt"
+    },
+    "regular": []
+  },
+  "reboot": false
+}

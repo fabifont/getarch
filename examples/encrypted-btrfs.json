@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "disk": {
+    "path": "/dev/sda",
+    "wipe_before": false
+  },
+  "partitioning": {
+    "layout": "efi-root",
+    "efi_size_mib": 512
+  },
+  "filesystem": {
+    "kind": "btrfs",
+    "label": "system"
+  },
+  "encryption": {
+    "kind": "luks2",
+    "password": "CHANGE_ME"
+  },
+  "swap": {
+    "kind": "none"
+  },
+  "kernel": {
+    "kind": "linux"
+  },
+  "microcode": {
+    "kind": "auto"
+  },
+  "bootloader": {
+    "kind": "systemd-boot",
+    "timeout_seconds": 5
+  },
+  "initramfs": {
+    "generator": "mkinitcpio",
+    "hooks": [
+      "base",
+      "systemd",
+      "autodetect",
+      "modconf",
+      "kms",
+      "keyboard",
+      "sd-vconsole",
+      "block",
+      "sd-encrypt",
+      "filesystems",
+      "fsck"
+    ]
+  },
+  "locale": {
+    "lang": "en_US.UTF-8",
+    "locale": "en_US.UTF-8 UTF-8",
+    "keymap": "us",
+    "timezone": "UTC"
+  },
+  "network": {
+    "hostname": "arch",
+    "backend": "networkmanager"
+  },
+  "packages": [
+    "base",
+    "base-devel",
+    "linux",
+    "linux-firmware",
+    "networkmanager",
+    "sudo",
+    "vim"
+  ],
+  "services": {
+    "enable": [
+      "NetworkManager"
+    ],
+    "timers": [
+      "fstrim.timer"
+    ]
+  },
+  "mirrors": {
+    "strategy": "keep"
+  },
+  "users": {
+    "root": {
+      "kind": "prompt"
+    },
+    "regular": [
+      {
+        "username": "alice",
+        "password": "CHANGE_ME",
+        "groups": [
+          "wheel"
+        ],
+        "sudo": true
+      }
+    ]
+  },
+  "reboot": false
+}
