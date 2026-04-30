@@ -28,3 +28,8 @@ class FirmwareProvider(Protocol):
 @runtime_checkable
 class PacmanProvider(Protocol):
     def package_exists(self, name: str) -> bool: ...
+
+
+@runtime_checkable
+class IdentityProvider(Protocol):
+    def is_root(self) -> bool: ...
