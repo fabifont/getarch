@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from getarch.config.loader import load_config
 from getarch.errors import SyntacticConfigError
@@ -59,8 +60,6 @@ def test_load_config_unsupported_version(tmp_path: Path) -> None:
 
 
 def test_load_config_from_yaml(tmp_path: Path) -> None:
-    import yaml
-
     p = tmp_path / "c.yaml"
     p.write_text(yaml.safe_dump(_FULL))
     cfg = load_config(p)
@@ -68,8 +67,6 @@ def test_load_config_from_yaml(tmp_path: Path) -> None:
 
 
 def test_load_config_from_yml_extension(tmp_path: Path) -> None:
-    import yaml
-
     p = tmp_path / "c.yml"
     p.write_text(yaml.safe_dump(_FULL))
     cfg = load_config(p)

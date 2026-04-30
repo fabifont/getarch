@@ -73,64 +73,66 @@ v2.0.0.
 ## P2 — quality and flexibility improvements
 
 ### YAML / TOML config support
-* **Plan:** branch in `config/loader.py` on the file extension; reuse the
-  same Pydantic model.
-* **Modules:** `getarch/config/loader.py`.
-* **Tests:** round-trip from each format.
+* **Status:** done. `config/loader.py` branches on file extension and uses
+  `yaml.safe_load`/`tomllib.loads`/`json.loads`.
 
 ### Additional bootloaders (GRUB, UKI/systemd-stub)
-* **Plan:** new strategy classes per kind; `Planner._bootloader_step`
-  factory dispatches on `cfg.bootloader.kind`. Schema enum widens.
-* **Modules:** `getarch/planning/strategies/bootloader.py`, schema.
-* **Risks:** GRUB requires a different ESP layout (`grub-install
-  --bootloader-id`) and BIOS dual-boot considerations.
+* **Status:** done. `GrubStrategy` and `UkiStrategy` plus
+  `build_bootloader_strategy` dispatch on `cfg.bootloader.kind`.
 
 ### Additional filesystems (xfs, f2fs)
-* **Plan:** new strategy modules; schema enum widening.
-* **Risks:** f2fs needs specific mkinitcpio modules.
+* **Status:** done. `_SimpleMkfsStrategy` covers xfs/f2fs alongside ext4
+  inside the existing factory.
 
 ### dracut initramfs
-* **Plan:** new initramfs strategy; schema enum.
-* **Risks:** dracut uses different LUKS hooks and a different config
-  location (`/etc/dracut.conf.d/`).
+* **Status:** done. `DracutStrategy` writes
+  `/etc/dracut.conf.d/10-getarch.conf` and runs
+  `dracut --regenerate-all --force`. `build_initramfs_strategy` dispatches.
 
 ### TPM2 / FIDO2 LUKS unlock
-* **Plan:** new encryption strategy that runs `systemd-cryptenroll
-  --tpm2-device=auto` or `--fido2-device=auto` after LUKS open.
-* **Risks:** hardware-dependent; hard to QEMU-test reliably.
+* **Status:** done. `LuksStrategy` honours
+  `EncryptionConfig.tpm2_unlock`/`fido2_unlock` and emits
+  `systemd-cryptenroll --tpm2-device=auto`/`--fido2-device=auto` after
+  open.
 
 ### Detached LUKS header
-* **Plan:** schema field for header path; planner emits `cryptsetup
-  luksFormat --header=...` and `rd.luks.options=header=...`.
-* **Risks:** complicates recovery.
+* **Status:** done. `EncryptionConfig.header_path` propagates to
+  `cryptsetup` calls and bootloader cmdlines; preflight refuses missing
+  headers.
 
 ### `zram` swap
-* **Plan:** new step that installs `zram-generator` and writes
-  `/etc/systemd/zram-generator.conf`.
+* **Status:** done. `ZramStrategy` writes
+  `/etc/systemd/zram-generator.conf` and the planner installs
+  `zram-generator` automatically.
 
 ### Custom mountpoints
-* **Plan:** schema field for arbitrary `(partition, mountpoint)` pairs;
-  planner expands mount commands.
+* **Status:** done. `mountpoints` accepts
+  `{partition_label, mountpoint, filesystem, mount_options, create}` and
+  the new `custom-mountpoints` planner step formats and mounts each
+  entry. Reserved labels and managed mountpoints are rejected.
 
 ### Network: full systemd-networkd / iwd stacks
-* **Plan:** planner writes `*.network` and `*.link` files for
-  systemd-networkd; copies `/var/lib/iwd/<ssid>.psk` for iwd.
+* **Status:** done. `systemd_networkd` profiles are rendered to
+  `/etc/systemd/network/*.network` and `iwd_networks` PSKs are written to
+  `/var/lib/iwd/*.psk` (mode 0600, sensitive logging).
 
 ### Audit log
-* **Plan:** wrap the runner with a `LoggingRunner` that appends every
-  rendered command to `<mount>/var/log/getarch.log` after install.
+* **Status:** done. `LoggingRunner` records every command (with sensitive
+  redaction) and the install command writes the JSON log to
+  `<mount>/var/log/getarch.log` before cleanup.
 
 ### Robust unmount / cleanup retries
-* **Plan:** `umount -R` falls back to `umount -l` on failure with a clear
-  warning.
+* **Status:** done. Cleanup runs `umount -R || umount -lR` so a busy
+  target falls back to lazy unmount.
 
 ### PyPI publishing
-* **Plan:** add `pypa/gh-action-pypi-publish` to `release.yml` gated on a
-  trusted publisher.
+* **Status:** done. `release.yml` builds with `uv build` and publishes to
+  PyPI through a Trusted Publisher; setup is documented in
+  `docs/RELEASING.md`.
 
 ### Single-file zipapp distribution
-* **Plan:** `uv build` + `shiv` or `zipapp` + bundled venv for a portable
-  binary. Replaces what PyInstaller did historically.
+* **Status:** done. The release workflow builds `dist/getarch.pyz` via
+  `shiv` and attaches it to the GitHub Release.
 
 ## P3 — advanced / future
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from getarch.execution.command import Command
 from getarch.execution.result import CommandResult
@@ -37,7 +37,7 @@ class LoggingRunner:
             (command.argv[0], "<redacted>") if command.sensitive else command.argv
         )
         record = {
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "ts": datetime.now(UTC).isoformat(timespec="seconds"),
             "argv": list(argv),
             "chroot": chroot_path if command.chroot else None,
             "exit": result.returncode,

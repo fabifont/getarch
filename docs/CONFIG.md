@@ -26,6 +26,7 @@ This document describes every field in v1.
 | `services` | object | yes | — | systemd units to enable. |
 | `mirrors` | object | yes | — | Mirror strategy. |
 | `users` | object | yes | — | Root authentication + optional regular users. |
+| `mountpoints` | list | no | `[]` | Extra partlabel→mountpoint pairs. |
 | `reboot` | bool | no | `false` | Reboot after the install? |
 
 ## `disk`
@@ -61,6 +62,10 @@ and mounts it at `/home`. For btrfs roots, the default `@home` subvolume is
 omitted because `/home` lives on the standalone filesystem.
 
 ## `filesystem`
+
+Supported kinds: `ext4`, `btrfs`, `xfs`, `f2fs`. ext4/xfs/f2fs share a
+single command graph (`mkfs`, mount, optional `/home` mount). Only `btrfs`
+declares subvolumes.
 
 ext4:
 
@@ -100,6 +105,17 @@ When `kind` is `luks2`, `password` is required. The initramfs hooks **must**
 include either `encrypt` (busybox) or `sd-encrypt` (systemd) — semantic
 validation enforces this. The mapper name defaults to `system`.
 
+Optional unattended-unlock fields (LUKS2 only):
+
+* `tpm2_unlock: true` — runs `systemd-cryptenroll --tpm2-device=auto` so
+  the system unlocks at boot when the TPM2 measurement matches.
+* `fido2_unlock: true` — runs `systemd-cryptenroll --fido2-device=auto` so
+  a connected FIDO2 token can unlock the volume.
+* `header_path: "/path/to/header"` — detached LUKS header. The path is
+  validated by environment preflight; every `cryptsetup` invocation gets
+  `--header=<header_path>` and the bootloader cmdline gains
+  `rd.luks.options=header=...`.
+
 > Storing a plaintext password in the JSON is unsafe. The roadmap covers
 > prompt-only and secret-file modes that avoid this.
 
@@ -111,6 +127,9 @@ validation enforces this. The mapper name defaults to `system`.
 * `{"kind": "swapfile", "size_mib": 4096}` — created during install at
   `/swap/swapfile`. On btrfs, CoW is disabled on `/swap` before the file is
   allocated. `genfstab` picks up the swapon entry from `/proc/swaps`.
+* `{"kind": "zram", "zram_size_mib": 4096}` — installs `zram-generator`
+  and writes `/etc/systemd/zram-generator.conf` so `/dev/zram0` mounts on
+  first boot. Omit `zram_size_mib` for `min(ram, 8192)`.
 
 ## `kernel`
 
@@ -136,9 +155,18 @@ references the matching `*.img` from the bootloader entry.
 }
 ```
 
-`bootctl install` runs from the live ISO with `--esp-path=<mount_root>/boot`
-because `arch-chroot` runs in a pid namespace and refuses to write UEFI
-variables.
+Supported kinds: `systemd-boot` (default), `grub`, `uki`.
+
+* **systemd-boot** — `bootctl install` runs from the live ISO with
+  `--esp-path=<mount_root>/boot` because `arch-chroot` runs in a pid
+  namespace and refuses to write UEFI variables.
+* **grub** — runs `grub-install --target=x86_64-efi
+  --efi-directory=/boot --bootloader-id=<entry_id>` and renders
+  `/etc/default/grub` then `grub-mkconfig`. Enables `cryptodisk` when
+  encryption is on.
+* **uki** — writes a mkinitcpio preset that emits a Unified Kernel Image
+  to `/boot/EFI/Linux/<entry_id>-<kernel>.efi` and chains it through
+  `bootctl install` (systemd-boot picks UKIs up automatically).
 
 ## `initramfs`
 
@@ -149,8 +177,14 @@ variables.
 }
 ```
 
-The hooks list is written to `/etc/mkinitcpio.conf.d/10-hooks.conf` (the
-Arch-recommended drop-in location); `mkinitcpio -p <kernel>` runs in chroot.
+Generators:
+
+* **mkinitcpio** (default) — the hooks list is written to
+  `/etc/mkinitcpio.conf.d/10-hooks.conf` (the Arch-recommended drop-in
+  location); `mkinitcpio -p <kernel>` runs in chroot.
+* **dracut** — writes `/etc/dracut.conf.d/10-getarch.conf` (with
+  `crypt` added when LUKS is on) and runs `dracut --regenerate-all
+  --force` in chroot. `hooks` is ignored.
 
 ## `locale`
 
@@ -175,6 +209,37 @@ list-keymaps`). Timezone is validated against `timedatectl list-timezones`.
 
 Backends: `networkmanager` (default — the planner appends `networkmanager` to
 packages automatically), `systemd-networkd`, `iwd`.
+
+Optional declarative configuration for non-NetworkManager backends:
+
+```json
+{
+  "hostname": "workstation",
+  "backend": "systemd-networkd",
+  "systemd_networkd": [
+    {
+      "name": "20-wired",
+      "match": {"Name": "en*"},
+      "network": {"DHCP": "yes", "DNS": ["1.1.1.1", "8.8.8.8"]}
+    }
+  ]
+}
+```
+
+```json
+{
+  "hostname": "laptop",
+  "backend": "iwd",
+  "iwd_networks": [
+    {"ssid": "MyWifi", "psk": "secret"}
+  ]
+}
+```
+
+For `systemd-networkd`, each profile is rendered to
+`/etc/systemd/network/<name>.network`. For `iwd`, each network is written
+to `/var/lib/iwd/<ssid>.psk` (mode 0600, content `[Security]\nPassphrase
+= <psk>`).
 
 ## `packages`
 
@@ -222,6 +287,30 @@ Root authentication kinds:
 
 Regular users may declare `password` (plain), `hashed_password` (preferred),
 `groups`, `shell`, `sudo`, `create_home`.
+
+## `mountpoints`
+
+Custom partlabel→mountpoint pairs for partitions on the target disk that
+are *not* created by the planner.
+
+```json
+{
+  "mountpoints": [
+    {
+      "partition_label": "data",
+      "mountpoint": "/srv",
+      "filesystem": "ext4",
+      "mount_options": ["noatime"],
+      "create": true
+    }
+  ]
+}
+```
+
+Reserved partition labels (`EFI`, `system`, `cryptsystem`, `swap`, `home`)
+and reserved mountpoints (`/`, `/boot`, `/home`) are rejected by the
+semantic validator. When `create=true`, the planner formats the partition
+with the chosen filesystem and labels it with `partition_label`.
 
 ## `reboot`
 

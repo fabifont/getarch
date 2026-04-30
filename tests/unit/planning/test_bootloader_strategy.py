@@ -129,17 +129,17 @@ def test_uki_writes_preset_and_runs_mkinitcpio() -> None:
 
 
 def test_factory_dispatches_on_kind() -> None:
-    common = {
-        "kernel": KernelSpec(),
-        "microcode": MicrocodeKind.NONE,
-        "encryption": EncryptionSpec(kind=EncryptionKind.NONE),
-        "rootflags": None,
-        "crypt_partition_path": "/dev/disk/by-partlabel/cryptsystem",
-        "mount_root": Path("/mnt"),
-    }
-    sb = build_bootloader_strategy(BootloaderSpec(kind=BootloaderKind.SYSTEMD_BOOT), **common)
-    grub = build_bootloader_strategy(BootloaderSpec(kind=BootloaderKind.GRUB), **common)
-    uki = build_bootloader_strategy(BootloaderSpec(kind=BootloaderKind.UKI), **common)
-    assert isinstance(sb, SystemdBootStrategy)
-    assert isinstance(grub, GrubStrategy)
-    assert isinstance(uki, UkiStrategy)
+    def _build(kind: BootloaderKind):  # type: ignore[no-untyped-def]
+        return build_bootloader_strategy(
+            BootloaderSpec(kind=kind),
+            kernel=KernelSpec(),
+            microcode=MicrocodeKind.NONE,
+            encryption=EncryptionSpec(kind=EncryptionKind.NONE),
+            rootflags=None,
+            crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
+            mount_root=Path("/mnt"),
+        )
+
+    assert isinstance(_build(BootloaderKind.SYSTEMD_BOOT), SystemdBootStrategy)
+    assert isinstance(_build(BootloaderKind.GRUB), GrubStrategy)
+    assert isinstance(_build(BootloaderKind.UKI), UkiStrategy)
