@@ -147,3 +147,50 @@ def test_reflector_requires_non_empty_args() -> None:
     cfg = _cfg(mirrors={"strategy": "reflector", "reflector_args": []})
     with pytest.raises(SemanticConfigError, match="reflector_args"):
         validate_semantics(cfg)
+
+
+def test_mountpoint_reserved_label_rejected() -> None:
+    cfg = _cfg(
+        mountpoints=[
+            {
+                "partition_label": "system",
+                "mountpoint": "/srv",
+                "filesystem": "ext4",
+            },
+        ],
+    )
+    with pytest.raises(SemanticConfigError, match="reserved planner label"):
+        validate_semantics(cfg)
+
+
+def test_mountpoint_root_path_rejected() -> None:
+    cfg = _cfg(
+        mountpoints=[
+            {
+                "partition_label": "data",
+                "mountpoint": "/home",
+                "filesystem": "ext4",
+            },
+        ],
+    )
+    with pytest.raises(SemanticConfigError, match="managed"):
+        validate_semantics(cfg)
+
+
+def test_duplicate_mountpoint_partlabel_rejected() -> None:
+    cfg = _cfg(
+        mountpoints=[
+            {
+                "partition_label": "data",
+                "mountpoint": "/srv",
+                "filesystem": "ext4",
+            },
+            {
+                "partition_label": "data",
+                "mountpoint": "/var/data",
+                "filesystem": "ext4",
+            },
+        ],
+    )
+    with pytest.raises(SemanticConfigError, match="duplicate"):
+        validate_semantics(cfg)

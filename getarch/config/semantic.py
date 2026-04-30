@@ -15,6 +15,7 @@ def validate_semantics(cfg: Config) -> None:
     _check_mirrors(cfg)
     _check_home_layout(cfg)
     _check_luks_home_incompatible(cfg)
+    _check_mountpoints(cfg)
 
 
 def _check_kernel_in_packages(cfg: Config) -> None:
@@ -86,3 +87,30 @@ def _check_luks_home_incompatible(cfg: Config) -> None:
             "(e.g. efi-root or efi-swap-root) and rely on a /home subvolume, "
             "or wait for encrypted-home support.",
         )
+
+
+_RESERVED_PARTLABELS = frozenset({"EFI", "system", "cryptsystem", "swap", "home"})
+
+
+def _check_mountpoints(cfg: Config) -> None:
+    seen_labels: set[str] = set()
+    seen_mounts: set[str] = set()
+    for mp in cfg.mountpoints:
+        if mp.partition_label in _RESERVED_PARTLABELS:
+            raise SemanticConfigError(
+                f"mountpoint partition_label {mp.partition_label!r} collides "
+                f"with reserved planner label",
+            )
+        if mp.partition_label in seen_labels:
+            raise SemanticConfigError(
+                f"duplicate mountpoint partition_label {mp.partition_label!r}",
+            )
+        if mp.mountpoint in {"/", "/boot", "/home"}:
+            raise SemanticConfigError(
+                f"mountpoint {mp.mountpoint!r} is managed by the planner; "
+                f"do not declare it under mountpoints",
+            )
+        if mp.mountpoint in seen_mounts:
+            raise SemanticConfigError(f"duplicate mountpoint {mp.mountpoint!r}")
+        seen_labels.add(mp.partition_label)
+        seen_mounts.add(mp.mountpoint)

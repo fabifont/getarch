@@ -25,6 +25,10 @@ from getarch.planning.strategies.encryption import build_encryption_strategy
 from getarch.planning.strategies.filesystem import build_filesystem_strategy
 from getarch.planning.strategies.initramfs import build_initramfs_strategy
 from getarch.planning.strategies.mirrors import build_mirror_strategy
+from getarch.planning.strategies.mountpoints import (
+    MountpointPlan,
+    MountpointsStrategy,
+)
 from getarch.planning.strategies.partitioning import SgdiskStrategy
 from getarch.planning.strategies.swap import SwapfileStrategy, ZramStrategy
 
@@ -68,6 +72,10 @@ class Planner:
         swap_step = self._swap_step(cfg, mount_root)
         if swap_step is not None:
             steps.append(swap_step)
+
+        custom_mounts_step = self._custom_mountpoints_step(cfg, mount_root)
+        if custom_mounts_step is not None:
+            steps.append(custom_mounts_step)
 
         steps.append(self._packages_step(cfg, mount_root, microcode))
         steps.append(self._fstab_step(mount_root))
@@ -366,6 +374,33 @@ class Planner:
         return FilesystemSpec(
             kind=FilesystemKind(cfg.filesystem.kind),
             label=cfg.filesystem.label,
+        )
+
+    def _custom_mountpoints_step(
+        self,
+        cfg: Config,
+        mount_root: Path,
+    ) -> PlannedStep | None:
+        if not cfg.mountpoints:
+            return None
+        plans = tuple(
+            MountpointPlan(
+                partition_label=m.partition_label,
+                mountpoint=m.mountpoint,
+                filesystem=m.filesystem,
+                mount_options=tuple(m.mount_options),
+                create=m.create,
+            )
+            for m in cfg.mountpoints
+        )
+        cmds = MountpointsStrategy(plans=plans, mount_root=mount_root).commands()
+        return PlannedStep(
+            id="custom-mountpoints",
+            title="Mount user-declared partitions",
+            phase=StepPhase.MOUNTING,
+            commands=cmds,
+            destructive=any(p.create for p in plans),
+            description=f"format and mount {len(plans)} extra partitions",
         )
 
     def _swap_step(self, cfg: Config, mount_root: Path) -> PlannedStep | None:
