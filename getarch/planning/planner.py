@@ -24,6 +24,7 @@ from getarch.planning.strategies.bootloader import SystemdBootStrategy
 from getarch.planning.strategies.encryption import build_encryption_strategy
 from getarch.planning.strategies.filesystem import build_filesystem_strategy
 from getarch.planning.strategies.initramfs import MkinitcpioStrategy
+from getarch.planning.strategies.mirrors import build_mirror_strategy
 from getarch.planning.strategies.partitioning import SgdiskStrategy
 
 _PLAN_VERSION = "1"
@@ -56,6 +57,9 @@ class Planner:
         fs_steps = self._filesystem_steps(cfg, root_partition, efi_partition, mount_root)
         steps.extend(fs_steps)
 
+        mirror_step = self._mirror_step(cfg, mount_root)
+        if mirror_step is not None:
+            steps.append(mirror_step)
         steps.append(self._packages_step(cfg, mount_root, microcode))
         steps.append(self._fstab_step(mount_root))
         steps.append(self._system_config_step(cfg, mount_root))
@@ -313,6 +317,19 @@ class Planner:
                 subvolumes=subs,
             )
         return FilesystemSpec(kind=FilesystemKind.EXT4, label=cfg.filesystem.label)
+
+    def _mirror_step(self, cfg: Config, mount_root: Path) -> PlannedStep | None:
+        strategy = build_mirror_strategy(cfg.mirrors, mount_root)
+        if strategy is None:
+            return None
+        return PlannedStep(
+            id="mirrors",
+            title="Configure pacman mirrors",
+            phase=StepPhase.MIRRORS,
+            commands=strategy.commands(),
+            destructive=False,
+            description=f"mirrors strategy: {cfg.mirrors.strategy}",
+        )
 
     def _resolve_microcode(self, cfg: Config, cpu_vendor: str | None) -> MicrocodeKind:
         if cfg.microcode.kind == "intel":

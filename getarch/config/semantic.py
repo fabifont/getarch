@@ -12,6 +12,7 @@ def validate_semantics(cfg: Config) -> None:
     _check_encryption_initramfs(cfg)
     _check_swap_layout(cfg)
     _check_btrfs_subvolumes(cfg)
+    _check_mirrors(cfg)
 
 
 def _check_kernel_in_packages(cfg: Config) -> None:
@@ -54,4 +55,12 @@ def _check_btrfs_subvolumes(cfg: Config) -> None:
     if "/" not in mountpoints:
         raise SemanticConfigError(
             "btrfs configuration must include a subvolume mounted at '/' (root)",
+        )
+
+
+def _check_mirrors(cfg: Config) -> None:
+    if cfg.mirrors.strategy == "reflector" and not cfg.mirrors.reflector_args:
+        raise SemanticConfigError(
+            "mirrors.strategy='reflector' requires non-empty reflector_args; "
+            "consider ['--latest', '20', '--protocol', 'https', '--sort', 'rate']",
         )

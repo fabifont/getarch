@@ -93,3 +93,27 @@ def test_planner_microcode_explicit_overrides_vendor() -> None:
     pkgs_step = next(s for s in plan.steps if s.id == "packages")
     assert "amd-ucode" in pkgs_step.commands[0].argv
     assert "intel-ucode" not in pkgs_step.commands[0].argv
+
+
+def test_planner_emits_mirrors_step_when_reflector() -> None:
+    cfg_dict = {
+        **EXAMPLES["minimal-ext4"],
+        "mirrors": {
+            "strategy": "reflector",
+            "reflector_args": ["--country", "Italy"],
+        },
+    }
+    plan = Planner().build(
+        cfg=Config.model_validate(cfg_dict),
+        disk=_disk(),
+        mount_root=Path("/mnt"),
+    )
+    ids = [s.id for s in plan.steps]
+    assert "mirrors" in ids
+    assert ids.index("mirrors") < ids.index("packages")
+
+
+def test_planner_skips_mirrors_step_when_keep() -> None:
+    cfg = Config.model_validate(EXAMPLES["minimal-ext4"])
+    plan = Planner().build(cfg=cfg, disk=_disk(), mount_root=Path("/mnt"))
+    assert "mirrors" not in {s.id for s in plan.steps}
