@@ -26,3 +26,6 @@ DEFAULT_BTRFS_SUBVOLUMES: Final = (
     ("@snapshots", Path("/.snapshots")),
 )
 BASE_PACKAGES: Final = ("base", "base-devel", "linux-firmware", "sudo")
+INTERNET_REACHABILITY_HOST: Final = "archlinux.org"
+INTERNET_REACHABILITY_TIMEOUT_SECONDS: Final = 3.0
+PACMAN_KEYRING_PATH: Final = Path("/etc/pacman.d/gnupg/pubring.gpg")
