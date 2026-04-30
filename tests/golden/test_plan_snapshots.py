@@ -21,3 +21,17 @@ def test_encrypted_btrfs_plan_snapshot(snapshot: SnapshotAssertion) -> None:
     disk = Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**33)
     plan_json = render_json(Planner().build(cfg=cfg, disk=disk, mount_root=Path("/mnt")))
     assert plan_json == snapshot
+
+
+def test_full_btrfs_home_swap_plan_snapshot(snapshot: SnapshotAssertion) -> None:
+    cfg = Config.model_validate(EXAMPLES["full-btrfs-home-swap"])
+    disk = Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**33)
+    plan_json = render_json(
+        Planner().build(
+            cfg=cfg,
+            disk=disk,
+            mount_root=Path("/mnt"),
+            cpu_vendor="GenuineIntel",
+        ),
+    )
+    assert plan_json == snapshot

@@ -86,9 +86,33 @@ _ENCRYPTED_BTRFS: Final[dict[str, object]] = {
 }
 
 
+_FULL_BTRFS_HOME_SWAP: Final[dict[str, object]] = {
+    **_ENCRYPTED_BTRFS,
+    "partitioning": {
+        "layout": "efi-swap-home-root",
+        "efi_size_mib": 512,
+        "swap_size_mib": 2048,
+        "home_size_mib": 8192,
+    },
+    "swap": {"kind": "swapfile", "size_mib": 2048},
+    "mirrors": {
+        "strategy": "reflector",
+        "reflector_args": [
+            "--country",
+            "Italy",
+            "--protocol",
+            "https",
+            "--sort",
+            "rate",
+        ],
+    },
+}
+
+
 EXAMPLES: Final[dict[str, dict[str, object]]] = {
     "minimal-ext4": _MINIMAL_EXT4,
     "encrypted-btrfs": _ENCRYPTED_BTRFS,
+    "full-btrfs-home-swap": _FULL_BTRFS_HOME_SWAP,
 }
 
 
