@@ -625,18 +625,18 @@
         "title": "Unmount target",
         "phase": "cleanup",
         "destructive": false,
-        "description": "umount -R /mnt",
+        "description": "umount -R /mnt with lazy fallback",
         "commands": [
           {
             "argv": [
-              "umount",
-              "-R",
-              "/mnt"
+              "sh",
+              "-c",
+              "umount -R /mnt || umount -lR /mnt"
             ],
             "chroot": false,
             "sensitive": false,
             "input": null,
-            "description": "recursively unmount target"
+            "description": "unmount target, falling back to lazy unmount on busy (/mnt)"
           }
         ]
       }
@@ -1365,7 +1365,7 @@
         "title": "Unmount target",
         "phase": "cleanup",
         "destructive": false,
-        "description": "umount -R /mnt",
+        "description": "umount -R /mnt with lazy fallback",
         "commands": [
           {
             "argv": [
@@ -1379,14 +1379,14 @@
           },
           {
             "argv": [
-              "umount",
-              "-R",
-              "/mnt"
+              "sh",
+              "-c",
+              "umount -R /mnt || umount -lR /mnt"
             ],
             "chroot": false,
             "sensitive": false,
             "input": null,
-            "description": "recursively unmount target"
+            "description": "unmount target, falling back to lazy unmount on busy (/mnt)"
           }
         ]
       }
@@ -1831,18 +1831,18 @@
         "title": "Unmount target",
         "phase": "cleanup",
         "destructive": false,
-        "description": "umount -R /mnt",
+        "description": "umount -R /mnt with lazy fallback",
         "commands": [
           {
             "argv": [
-              "umount",
-              "-R",
-              "/mnt"
+              "sh",
+              "-c",
+              "umount -R /mnt || umount -lR /mnt"
             ],
             "chroot": false,
             "sensitive": false,
             "input": null,
-            "description": "recursively unmount target"
+            "description": "unmount target, falling back to lazy unmount on busy (/mnt)"
           }
         ]
       }

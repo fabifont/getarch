@@ -337,13 +337,20 @@ class Planner:
             cmds.append(
                 Command(
                     argv=("swapoff", str(mount_root / "swap/swapfile")),
+                    check=False,
                     description="deactivate swapfile so target filesystem is not busy",
                 ),
             )
         cmds.append(
             Command(
-                argv=("umount", "-R", str(mount_root)),
-                description="recursively unmount target",
+                argv=(
+                    "sh",
+                    "-c",
+                    f"umount -R {mount_root} || umount -lR {mount_root}",
+                ),
+                description=(
+                    f"unmount target, falling back to lazy unmount on busy ({mount_root})"
+                ),
             ),
         )
         return PlannedStep(
@@ -352,7 +359,7 @@ class Planner:
             phase=StepPhase.CLEANUP,
             commands=tuple(cmds),
             destructive=False,
-            description=f"umount -R {mount_root}",
+            description=f"umount -R {mount_root} with lazy fallback",
         )
 
     def _reboot_step(self) -> PlannedStep:
