@@ -3,33 +3,72 @@ name: Build and release
 on:
   push:
     tags:
-      - "*"
+      - "v*"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
+    outputs:
+      sdist: ${{ steps.upload.outputs.artifact-id }}
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-
-      - name: Setup python
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
         with:
-          python-version: "3.11"
-
-      - name: Install poetry
-        run: curl -sSL https://install.python-poetry.org | python3 -
-
-      - name: Install dependencies
-        run: /root/.local/bin/poetry config virtualenvs.create false && /root/.local/bin/poetry install --no-interaction --no-ansi
-
-      - name: Generate executable
-        run: pyinstaller --onefile bin/main.py --name=getarch
-
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          enable-cache: true
+      - name: Install Python 3.14
+        run: uv python install 3.14
+      - name: Sync deps
+        run: uv sync --all-groups
+      - name: Build wheel + sdist
+        run: uv build
+      - name: Build single-file zipapp via shiv
+        run: |
+          uv run --with shiv shiv -c getarch -o dist/getarch.pyz .
+          chmod +x dist/getarch.pyz
+      - name: Upload dist artifacts
+        id: upload
+        uses: actions/upload-artifact@v4
         with:
-          files: ./dist/getarch
+          name: dist
+          path: dist/
+
+  publish-pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/getarch
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Drop zipapp before pypi publish
+        run: rm -f dist/getarch.pyz
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: true
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/getarch.pyz
