@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from getarch.errors import EnvironmentError as _EnvErr
 from getarch.execution.command import Command
 from getarch.execution.context import ExecutionContext
+from getarch.execution.logging_runner import LoggingRunner
 from getarch.execution.result import CommandResult, StepResult, StepStatus
 from getarch.system.discovery import BlockDeviceProvider
 
@@ -63,4 +65,32 @@ class DiskBusyGuardStep:
                 f"target disk {self.target_disk_path} has mounted partitions: "
                 f"{', '.join(mounts)}. Refusing to proceed.",
             )
+        return StepResult(step_id=self.id, status=StepStatus.SUCCEEDED, commands=())
+
+
+@dataclass(frozen=True, slots=True)
+class AuditLogStep:
+    """Persist :class:`LoggingRunner` lines to the target before cleanup.
+
+    Inserted by the install command immediately before the planner's
+    cleanup step so the audit trail lands inside the new system, not on
+    the live ISO. Holds a reference to the runner so it can read the
+    current buffer when executed.
+    """
+
+    audit_runner: LoggingRunner
+    log_path: Path
+    id: str = "audit-log"
+    title: str = "Persist audit log"
+    destructive: bool = False
+
+    def execute(self, ctx: ExecutionContext) -> StepResult:
+        del ctx
+        try:
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            self.log_path.write_text(self.audit_runner.render(), encoding="utf-8")
+        except OSError as exc:
+            raise _EnvErr(
+                f"failed to write audit log to {self.log_path}: {exc}",
+            ) from exc
         return StepResult(step_id=self.id, status=StepStatus.SUCCEEDED, commands=())

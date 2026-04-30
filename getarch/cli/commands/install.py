@@ -23,7 +23,11 @@ from getarch.execution.real_runner import RealRunner
 from getarch.execution.runner import CommandRunner
 from getarch.installers.base import PlannedStepExecutor
 from getarch.installers.confirmation import require_destructive_confirmation
-from getarch.installers.preflight import DiskBusyGuardStep, RuntimePreflightStep
+from getarch.installers.preflight import (
+    AuditLogStep,
+    DiskBusyGuardStep,
+    RuntimePreflightStep,
+)
 from getarch.planning.planner import Planner
 from getarch.planning.rendering import render_text
 from getarch.system.block_devices import LsblkBlockDevices
@@ -107,16 +111,33 @@ def _execute_pipeline(
         )
     if not skip_runtime_preflight and not dry_run:
         steps.append(RuntimePreflightStep())
-    steps.extend(PlannedStepExecutor(planned=s) for s in plan.steps)
+    log_path = mount_root / "var/log/getarch.log"
+    audit_step: object | None = (
+        AuditLogStep(audit_runner=audit_runner, log_path=log_path) if not dry_run else None
+    )
+    for planned in plan.steps:
+        if audit_step is not None and planned.id == "cleanup":
+            steps.append(audit_step)
+            audit_step = None  # never insert twice
+        steps.append(PlannedStepExecutor(planned=planned))
+    if audit_step is not None:
+        # No cleanup step in this plan (unusual): still flush the audit log.
+        steps.append(audit_step)
     Pipeline(steps=tuple(steps)).run(exec_ctx)  # type: ignore[arg-type]
 
 
-def _write_audit_log(
+def _flush_audit_on_failure(
     audit_runner: LoggingRunner,
     *,
     mount_root: Path,
     console: GetarchConsole,
 ) -> None:
+    """Best-effort write of the audit log when the pipeline fails before cleanup.
+
+    The target is still mounted in the failure path, so the log lands on the
+    real filesystem. Any error here is swallowed: we are already on the
+    failure path, do not mask the original exception.
+    """
     log_path = mount_root / "var/log/getarch.log"
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -174,18 +195,23 @@ def run(
             mounts_summary=report.mountpoints_seen if report else (),
         )
         audit_runner = LoggingRunner(inner=_build_runner(dry_run=dry_run))
-        _execute_pipeline(
-            plan,
-            cfg=cfg,
-            audit_runner=audit_runner,
-            mount_root=mount_root,
-            assume_yes=assume_yes,
-            force=force,
-            dry_run=dry_run,
-            skip_runtime_preflight=skip_runtime_preflight,
-        )
-        if not dry_run:
-            _write_audit_log(audit_runner, mount_root=mount_root, console=console)
+        try:
+            _execute_pipeline(
+                plan,
+                cfg=cfg,
+                audit_runner=audit_runner,
+                mount_root=mount_root,
+                assume_yes=assume_yes,
+                force=force,
+                dry_run=dry_run,
+                skip_runtime_preflight=skip_runtime_preflight,
+            )
+        except GetarchError:
+            if not dry_run:
+                _flush_audit_on_failure(
+                    audit_runner, mount_root=mount_root, console=console,
+                )
+            raise
     except GetarchError as exc:
         console.error(str(exc))
         raise typer.Exit(code=2) from None

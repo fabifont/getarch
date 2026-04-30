@@ -197,6 +197,7 @@ class _SimpleMkfsStrategy:
     home_partition: str | None
     mkfs_argv: tuple[str, ...]
     description_label: str
+    label_flag: str = "-L"
 
     def commands(self) -> tuple[Command, ...]:
         cmds: list[Command] = [
@@ -205,7 +206,12 @@ class _SimpleMkfsStrategy:
                 description="create FAT32 EFI filesystem",
             ),
             Command(
-                argv=(*self.mkfs_argv, "-L", self.spec.label, self.root_partition),
+                argv=(
+                    *self.mkfs_argv,
+                    self.label_flag,
+                    self.spec.label,
+                    self.root_partition,
+                ),
                 description=(
                     f"create {self.description_label} filesystem labeled {self.spec.label}"
                 ),
@@ -216,7 +222,7 @@ class _SimpleMkfsStrategy:
                 Command(
                     argv=(
                         *self.mkfs_argv,
-                        "-L",
+                        self.label_flag,
                         self.spec.home_label,
                         self.home_partition,
                     ),
@@ -285,6 +291,7 @@ def _f2fs_strategy(
     mount_root: Path,
     home_partition: str | None,
 ) -> _SimpleMkfsStrategy:
+    # f2fs spells the label flag '-l' (lowercase), not '-L'.
     return _SimpleMkfsStrategy(
         spec=spec,
         root_partition=root_partition,
@@ -293,6 +300,7 @@ def _f2fs_strategy(
         home_partition=home_partition,
         mkfs_argv=("mkfs.f2fs", "-f"),
         description_label="f2fs",
+        label_flag="-l",
     )
 
 

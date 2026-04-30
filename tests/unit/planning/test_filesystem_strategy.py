@@ -95,7 +95,8 @@ def test_f2fs_strategy_emits_mkfs_f2fs() -> None:
         mount_root=Path("/mnt"),
     ).commands()
     flat = [c.argv for c in cmds]
-    assert ("mkfs.f2fs", "-f", "-L", "system", "/dev/disk/by-partlabel/system") in flat
+    # f2fs uses lowercase -l for label.
+    assert ("mkfs.f2fs", "-f", "-l", "system", "/dev/disk/by-partlabel/system") in flat
 
 
 def test_btrfs_with_home_partition_creates_separate_filesystem() -> None:

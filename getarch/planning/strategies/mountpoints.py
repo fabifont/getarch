@@ -1,8 +1,9 @@
 """Custom mountpoints strategy.
 
-Each entry references an *existing* partition by partlabel. The strategy
-formats the partition (when ``create=True``), creates the mountpoint inside
-``mount_root``, and mounts the partition.
+Each entry references an *existing* partition (by partlabel) on a disk
+other than the install target. The strategy creates the mountpoint inside
+``mount_root`` and mounts the partition. It does NOT format anything: that
+would risk wiping data the user expects to keep.
 """
 
 from __future__ import annotations
@@ -17,9 +18,7 @@ from getarch.execution.command import Command
 class MountpointPlan:
     partition_label: str
     mountpoint: str
-    filesystem: str
     mount_options: tuple[str, ...]
-    create: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,16 +31,6 @@ class MountpointsStrategy:
         for plan in self.plans:
             partition_path = f"/dev/disk/by-partlabel/{plan.partition_label}"
             target = self.mount_root / plan.mountpoint.lstrip("/")
-            if plan.create:
-                cmds.append(
-                    Command(
-                        argv=_mkfs_argv(plan.filesystem, plan.partition_label, partition_path),
-                        description=(
-                            f"create {plan.filesystem} filesystem on "
-                            f"{plan.partition_label} for {plan.mountpoint}"
-                        ),
-                    ),
-                )
             cmds.append(
                 Command(
                     argv=("mkdir", "-p", str(target)),
@@ -59,15 +48,3 @@ class MountpointsStrategy:
                 ),
             )
         return tuple(cmds)
-
-
-def _mkfs_argv(filesystem: str, label: str, partition_path: str) -> tuple[str, ...]:
-    if filesystem == "ext4":
-        return ("mkfs.ext4", "-F", "-L", label, partition_path)
-    if filesystem == "btrfs":
-        return ("mkfs.btrfs", "-f", "-L", label, partition_path)
-    if filesystem == "xfs":
-        return ("mkfs.xfs", "-f", "-L", label, partition_path)
-    if filesystem == "f2fs":
-        return ("mkfs.f2fs", "-f", "-L", label, partition_path)
-    raise ValueError(f"unsupported filesystem for custom mountpoint: {filesystem!r}")

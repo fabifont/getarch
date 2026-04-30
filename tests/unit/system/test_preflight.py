@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from getarch.config.examples import EXAMPLES
 from getarch.config.schema.v1 import Config
@@ -182,12 +183,13 @@ def test_preflight_fails_when_package_missing() -> None:
         _call(pac=_Pac(exists=False))
 
 
-def test_preflight_fails_when_detached_luks_header_missing() -> None:
+def test_detached_luks_header_rejected_at_schema_time() -> None:
+    """Detached headers are not safely supported yet — refuse at load."""
     cfg_dict = dict(EXAMPLES["minimal-ext4"])
     cfg_dict["encryption"] = {
         "kind": "luks2",
         "password": "x",
-        "header_path": "/no/such/header",
+        "header_path": "/run/header",
     }
     cfg_dict["initramfs"] = {
         "generator": "mkinitcpio",
@@ -205,18 +207,8 @@ def test_preflight_fails_when_detached_luks_header_missing() -> None:
             "fsck",
         ],
     }
-    cfg = Config.model_validate(cfg_dict)
-    with pytest.raises(EnvErr, match="detached LUKS header"):
-        preflight_environment(
-            cfg,
-            _BD(_disks()),
-            _Env(),
-            _Fw(),
-            _Pac(),
-            _Identity(),
-            _Iso(),
-            _Net(),
-        )
+    with pytest.raises(ValidationError, match="header_path"):
+        Config.model_validate(cfg_dict)
 
 
 def test_preflight_fails_when_static_mirrorlist_missing() -> None:

@@ -72,6 +72,17 @@ class EncryptionConfig(_Frozen):
             )
         if self.tpm2_unlock and self.fido2_unlock:
             raise ValueError("set at most one of tpm2_unlock or fido2_unlock")
+        if self.header_path:
+            # Detached headers require the header file to be reachable at
+            # boot via initramfs or external media. Booting the resulting
+            # system would need bootloader/initramfs support that getarch
+            # does not yet provide. Refuse instead of producing an
+            # unbootable system.
+            raise ValueError(
+                "encryption.header_path is not yet supported: detached LUKS "
+                "headers need boot-time access to the header that getarch "
+                "cannot guarantee. Track the roadmap for support.",
+            )
         return self
 
 
@@ -189,11 +200,20 @@ class UsersConfig(_Frozen):
 
 
 class MountpointConfig(_Frozen):
+    """Mount an *existing* partition by partlabel under the new system.
+
+    The partition must live on a disk other than ``disk.path``: the planner
+    wipes the target disk's GPT during partitioning, so target-disk
+    partitions reachable by partlabel are not safe to attach. Preflight
+    refuses configurations that violate this.
+
+    The planner does NOT format the partition. Pre-create the filesystem
+    yourself before running getarch.
+    """
+
     partition_label: str = Field(pattern=r"^[a-zA-Z0-9_.-]+$")
     mountpoint: str = Field(pattern=r"^/.+")
-    filesystem: Literal["ext4", "btrfs", "xfs", "f2fs"]
     mount_options: list[str] = Field(default_factory=list)
-    create: bool = True
 
 
 class Config(_Frozen):

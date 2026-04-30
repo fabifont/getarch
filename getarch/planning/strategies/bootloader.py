@@ -200,9 +200,16 @@ class UkiStrategy:
     """Unified Kernel Image strategy.
 
     Writes a mkinitcpio preset that emits a UKI to
-    ``/boot/EFI/Linux/<entry_id>-<kernel>.efi``. Also installs systemd-boot so
-    users get a graphical boot picker when multiple UKIs exist; bootctl is
-    optional but harmless.
+    ``/boot/EFI/Linux/<entry_id>-<kernel>.efi`` (the ESP that the
+    filesystem strategy already mounted at ``/boot``). Also installs
+    systemd-boot so users get a graphical boot picker when multiple UKIs
+    exist.
+
+    For LUKS roots, the kernel cmdline must reference the *encrypted
+    partition's* UUID. That UUID is only known after ``cryptsetup
+    luksFormat`` runs, so we resolve it at execution time via a small
+    ``bash -c`` script that runs ``blkid`` and writes
+    ``/etc/kernel/cmdline`` before invoking ``mkinitcpio``.
     """
 
     spec: BootloaderSpec
@@ -221,7 +228,7 @@ class UkiStrategy:
         )
         cmdline_path = self.mount_root / "etc/kernel/cmdline"
         uki_path = (
-            f"/efi/EFI/Linux/{self.spec.entry_id}-{self.kernel.kind.value}.efi"
+            f"/boot/EFI/Linux/{self.spec.entry_id}-{self.kernel.kind.value}.efi"
         )
         preset_text = (
             f"ALL_kver=\"/boot/{self.kernel.image_filename}\"\n"
@@ -230,55 +237,75 @@ class UkiStrategy:
             f"default_uki=\"{uki_path}\"\n"
             f"default_options=\"--splash /usr/share/systemd/bootctl/splash-arch.bmp\"\n"
         )
-        cmdline_text = self._cmdline() + "\n"
-        cmds: list[Command] = [
-            Command(
-                argv=("install", "-Dm644", "/dev/stdin", str(cmdline_path)),
-                input=cmdline_text,
-                description=f"write {cmdline_path}",
-            ),
-            Command(
-                argv=("install", "-Dm644", "/dev/stdin", str(preset_path)),
-                input=preset_text,
-                description=f"write {preset_path}",
-            ),
-            Command(
-                argv=(
-                    "mkdir",
-                    "-p",
-                    str(self.mount_root / "boot/EFI/Linux"),
+        cmds: list[Command] = []
+        if self.encryption.kind is EncryptionKind.LUKS2:
+            # Resolve the LUKS UUID at execution time, then write the
+            # cmdline atomically.
+            cmdline_template = self._cmdline_with_uuid_placeholder()
+            script = (
+                "set -euo pipefail\n"
+                f'LUKS_UUID="$(blkid -s UUID -o value {self.crypt_partition_path})"\n'
+                f"install -Dm644 /dev/stdin {cmdline_path} <<EOF\n"
+                f"{cmdline_template}\n"
+                "EOF\n"
+            )
+            cmds.append(
+                Command(
+                    argv=("bash", "-c", script),
+                    description=f"write {cmdline_path} with discovered LUKS UUID",
                 ),
-                description="create UKI output directory",
+            )
+        else:
+            cmds.append(
+                Command(
+                    argv=("install", "-Dm644", "/dev/stdin", str(cmdline_path)),
+                    input=self._cmdline_static() + "\n",
+                    description=f"write {cmdline_path}",
+                ),
+            )
+        cmds.extend(
+            (
+                Command(
+                    argv=("install", "-Dm644", "/dev/stdin", str(preset_path)),
+                    input=preset_text,
+                    description=f"write {preset_path}",
+                ),
+                Command(
+                    argv=("mkdir", "-p", str(self.mount_root / "boot/EFI/Linux")),
+                    description="create UKI output directory on ESP",
+                ),
+                Command(
+                    argv=("mkinitcpio", "-p", self.kernel.kind.value),
+                    chroot=True,
+                    description="regenerate UKI via mkinitcpio preset",
+                ),
+                Command(
+                    argv=("bootctl", f"--esp-path={self.mount_root}/boot", "install"),
+                    chroot=False,
+                    description="install systemd-boot loader (chains UKIs)",
+                ),
             ),
-            Command(
-                argv=("mkinitcpio", "-p", self.kernel.kind.value),
-                chroot=True,
-                description="regenerate UKI via mkinitcpio preset",
-            ),
-            Command(
-                argv=("bootctl", f"--esp-path={self.mount_root}/boot", "install"),
-                chroot=False,
-                description="install systemd-boot loader (chains UKIs)",
-            ),
-        ]
+        )
         return tuple(cmds)
 
-    def _cmdline(self) -> str:
-        params: list[str] = []
-        if self.encryption.kind is EncryptionKind.LUKS2:
-            params.append(
-                f"rd.luks.name=$(blkid -s UUID -o value "
-                f"{self.crypt_partition_path})={self.encryption.mapper_name}",
-            )
-            params.append(f"root=/dev/mapper/{self.encryption.mapper_name}")
-            if self.encryption.header_path:
-                params.append(f"rd.luks.options=header={self.encryption.header_path}")
-            if self.encryption.tpm2_unlock:
-                params.append("rd.luks.options=tpm2-device=auto")
-            if self.encryption.fido2_unlock:
-                params.append("rd.luks.options=fido2-device=auto")
-        else:
-            params.append("root=LABEL=system")
+    def _cmdline_static(self) -> str:
+        params: list[str] = ["root=LABEL=system"]
+        if self.rootflags:
+            params.append(self.rootflags)
+        params.append("rw")
+        params.extend(self.spec.extra_kernel_params)
+        return " ".join(params)
+
+    def _cmdline_with_uuid_placeholder(self) -> str:
+        # The script substitutes ${LUKS_UUID} via the bash heredoc.
+        params: list[str] = [
+            f"rd.luks.name=${{LUKS_UUID}}={self.encryption.mapper_name}",
+            f"root=/dev/mapper/{self.encryption.mapper_name}",
+        ]
+        if self.encryption.tpm2_unlock:
+            params.append("rd.luks.options=tpm2-device=auto")
+        if self.encryption.fido2_unlock:
+            params.append("rd.luks.options=fido2-device=auto")
         if self.rootflags:
             params.append(self.rootflags)
         params.append("rw")

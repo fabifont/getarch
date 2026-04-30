@@ -36,6 +36,9 @@ def _check_locale_consistency(cfg: Config) -> None:
 def _check_encryption_initramfs(cfg: Config) -> None:
     if cfg.encryption.kind == "none":
         return
+    if cfg.initramfs.generator != "mkinitcpio":
+        # dracut auto-discovers LUKS roots from kernel cmdline; no hook list.
+        return
     hooks = set(cfg.initramfs.hooks)
     if "encrypt" not in hooks and "sd-encrypt" not in hooks:
         raise SemanticConfigError(

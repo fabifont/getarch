@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,6 +48,7 @@ def preflight_environment(
     _assert_packages(cfg, pacman)
     _assert_mirrors(cfg)
     _assert_encryption(cfg)
+    _assert_mountpoints(cfg)
 
     return EnvironmentReport(
         disks_found=paths,
@@ -141,3 +143,32 @@ def _assert_encryption(cfg: Config) -> None:
         raise _EnvErr(
             f"detached LUKS header not found: {cfg.encryption.header_path}",
         )
+
+
+def _assert_mountpoints(cfg: Config) -> None:
+    if not cfg.mountpoints:
+        return
+    target_disk_name = Path(cfg.disk.path).name
+    for mp in cfg.mountpoints:
+        link = Path("/dev/disk/by-partlabel") / mp.partition_label
+        try:
+            resolved = link.resolve(strict=True)
+        except FileNotFoundError as exc:
+            raise _EnvErr(
+                f"mountpoint partlabel {mp.partition_label!r} not present on "
+                f"this system",
+            ) from exc
+        # `resolved` is e.g. /dev/sdb1 — strip the trailing partition index
+        # to get the parent disk name (sdb, nvme0n1, mmcblk0, etc.).
+        parent = _disk_name_for_partition(resolved.name)
+        if parent == target_disk_name:
+            raise _EnvErr(
+                f"mountpoint {mp.mountpoint!r} (partlabel "
+                f"{mp.partition_label!r}) lives on the install target disk "
+                f"{cfg.disk.path}; partitioning would destroy it",
+            )
+
+
+def _disk_name_for_partition(partition_name: str) -> str:
+    # nvme0n1p1 -> nvme0n1, mmcblk0p2 -> mmcblk0, sda1 -> sda
+    return re.sub(r"(p?\d+)$", "", partition_name)

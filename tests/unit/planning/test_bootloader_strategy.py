@@ -125,7 +125,26 @@ def test_uki_writes_preset_and_runs_mkinitcpio() -> None:
     assert ("mkinitcpio", "-p", "linux") in argvs
     flat = "".join(c.input or "" for c in cmds)
     assert "default_uki=" in flat
-    assert "/efi/EFI/Linux/arch-linux.efi" in flat
+    # UKI must land on the ESP that is actually mounted at /boot.
+    assert "/boot/EFI/Linux/arch-linux.efi" in flat
+
+
+def test_uki_with_luks_resolves_uuid_at_runtime_via_bash() -> None:
+    cmds = UkiStrategy(
+        spec=BootloaderSpec(kind=BootloaderKind.UKI, entry_id="arch"),
+        kernel=KernelSpec(),
+        microcode=MicrocodeKind.NONE,
+        encryption=EncryptionSpec(kind=EncryptionKind.LUKS2, password=Secret("x")),
+        rootflags=None,
+        crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
+        mount_root=Path("/mnt"),
+    ).commands()
+    bash = next(c for c in cmds if c.argv[0] == "bash")
+    assert bash.argv[1] == "-c"
+    script = bash.argv[2]
+    assert "blkid -s UUID -o value /dev/disk/by-partlabel/cryptsystem" in script
+    assert "rd.luks.name=${LUKS_UUID}=system" in script
+    assert "root=/dev/mapper/system" in script
 
 
 def test_factory_dispatches_on_kind() -> None:

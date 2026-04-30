@@ -92,8 +92,9 @@ class Planner:
         steps.append(
             self._bootloader_step(cfg, mount_root, encrypted=encrypted, microcode=microcode),
         )
-        if cfg.services.enable or cfg.services.timers:
-            steps.append(self._services_step(cfg))
+        services_step = self._services_step(cfg)
+        if services_step.commands:
+            steps.append(services_step)
         steps.append(self._users_step(cfg))
         steps.append(self._cleanup_step(cfg, mount_root))
         if cfg.reboot:
@@ -185,6 +186,8 @@ class Planner:
             pkgs.append(ucode)
         if cfg.network.backend == "networkmanager" and "networkmanager" not in pkgs:
             pkgs.append("networkmanager")
+        if cfg.network.backend == "iwd" and "iwd" not in pkgs:
+            pkgs.append("iwd")
         if cfg.swap.kind == "zram" and "zram-generator" not in pkgs:
             pkgs.append("zram-generator")
         return PlannedStep(
@@ -304,13 +307,22 @@ class Planner:
         )
 
     def _services_step(self, cfg: Config) -> PlannedStep:
+        enable = list(cfg.services.enable)
+        timers = list(cfg.services.timers)
+        # Backend-driven services so first boot actually has networking.
+        if cfg.network.backend == "systemd-networkd":
+            for svc in ("systemd-networkd", "systemd-resolved"):
+                if svc not in enable:
+                    enable.append(svc)
+        elif cfg.network.backend == "iwd" and "iwd" not in enable:
+            enable.append("iwd")
         svc_cmds = tuple(
             Command(
                 argv=("systemctl", "enable", svc),
                 chroot=True,
                 description=f"enable {svc}",
             )
-            for svc in (*cfg.services.enable, *cfg.services.timers)
+            for svc in (*enable, *timers)
         )
         return PlannedStep(
             id="services",
@@ -438,9 +450,7 @@ class Planner:
             MountpointPlan(
                 partition_label=m.partition_label,
                 mountpoint=m.mountpoint,
-                filesystem=m.filesystem,
                 mount_options=tuple(m.mount_options),
-                create=m.create,
             )
             for m in cfg.mountpoints
         )
@@ -450,8 +460,8 @@ class Planner:
             title="Mount user-declared partitions",
             phase=StepPhase.MOUNTING,
             commands=cmds,
-            destructive=any(p.create for p in plans),
-            description=f"format and mount {len(plans)} extra partitions",
+            destructive=False,
+            description=f"mount {len(plans)} extra existing partitions",
         )
 
     def _swap_step(self, cfg: Config, mount_root: Path) -> PlannedStep | None:

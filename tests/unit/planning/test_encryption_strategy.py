@@ -40,7 +40,10 @@ def test_luks_with_fido2_emits_systemd_cryptenroll() -> None:
     assert "--fido2-device=auto" in enroll.argv
 
 
-def test_luks_with_detached_header_passes_header_arg() -> None:
+def test_luks_with_detached_header_at_domain_layer_passes_header_arg() -> None:
+    """Domain-layer EncryptionSpec still threads header_path; the schema
+    refuses end-user config that sets it. This test guards the strategy
+    plumbing for when future bootloader/initramfs support lands."""
     spec = EncryptionSpec(
         kind=EncryptionKind.LUKS2,
         password=Secret("p"),
