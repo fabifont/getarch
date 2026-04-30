@@ -14,6 +14,8 @@ class StepPhase(StrEnum):
     ENCRYPTION = "encryption"
     FILESYSTEMS = "filesystems"
     MOUNTING = "mounting"
+    SWAP = "swap"
+    MIRRORS = "mirrors"
     PACKAGES = "packages"
     FSTAB = "fstab"
     SYSTEM_CONFIG = "system-config"
