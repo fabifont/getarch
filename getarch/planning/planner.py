@@ -29,6 +29,11 @@ from getarch.planning.strategies.mountpoints import (
     MountpointPlan,
     MountpointsStrategy,
 )
+from getarch.planning.strategies.network import (
+    IwdNetworkPlan,
+    NetworkConfigStrategy,
+    NetworkdProfilePlan,
+)
 from getarch.planning.strategies.partitioning import SgdiskStrategy
 from getarch.planning.strategies.swap import SwapfileStrategy, ZramStrategy
 
@@ -80,6 +85,9 @@ class Planner:
         steps.append(self._packages_step(cfg, mount_root, microcode))
         steps.append(self._fstab_step(mount_root))
         steps.append(self._system_config_step(cfg, mount_root))
+        network_step = self._network_config_step(cfg, mount_root)
+        if network_step is not None:
+            steps.append(network_step)
         steps.append(self._initramfs_step(cfg, mount_root))
         steps.append(
             self._bootloader_step(cfg, mount_root, encrypted=encrypted, microcode=microcode),
@@ -374,6 +382,42 @@ class Planner:
         return FilesystemSpec(
             kind=FilesystemKind(cfg.filesystem.kind),
             label=cfg.filesystem.label,
+        )
+
+    def _network_config_step(
+        self,
+        cfg: Config,
+        mount_root: Path,
+    ) -> PlannedStep | None:
+        if cfg.network.backend == "networkmanager":
+            return None
+        profiles = tuple(
+            NetworkdProfilePlan(
+                name=p.name,
+                match=dict(p.match),
+                network=dict(p.network),
+            )
+            for p in cfg.network.systemd_networkd
+        )
+        iwd = tuple(
+            IwdNetworkPlan(ssid=n.ssid, psk=n.psk)
+            for n in cfg.network.iwd_networks
+        )
+        if not profiles and not iwd:
+            return None
+        cmds = NetworkConfigStrategy(
+            backend=cfg.network.backend,
+            networkd_profiles=profiles,
+            iwd_networks=iwd,
+            mount_root=mount_root,
+        ).commands()
+        return PlannedStep(
+            id="network-config",
+            title="Render network configuration",
+            phase=StepPhase.SYSTEM_CONFIG,
+            commands=cmds,
+            destructive=False,
+            description=f"render {cfg.network.backend} configuration files",
         )
 
     def _custom_mountpoints_step(
