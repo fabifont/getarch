@@ -23,7 +23,7 @@ from getarch.execution.command import Command
 from getarch.planning.strategies.bootloader import build_bootloader_strategy
 from getarch.planning.strategies.encryption import build_encryption_strategy
 from getarch.planning.strategies.filesystem import build_filesystem_strategy
-from getarch.planning.strategies.initramfs import MkinitcpioStrategy
+from getarch.planning.strategies.initramfs import build_initramfs_strategy
 from getarch.planning.strategies.mirrors import build_mirror_strategy
 from getarch.planning.strategies.partitioning import SgdiskStrategy
 from getarch.planning.strategies.swap import SwapfileStrategy
@@ -210,17 +210,33 @@ class Planner:
         )
 
     def _initramfs_step(self, cfg: Config, mount_root: Path) -> PlannedStep:
+        encrypted = cfg.encryption.kind == "luks2"
+        encryption_spec = EncryptionSpec(
+            kind=EncryptionKind.LUKS2 if encrypted else EncryptionKind.NONE,
+            password=(
+                Secret(cfg.encryption.password)
+                if encrypted and cfg.encryption.password
+                else None
+            ),
+            mapper_name=cfg.encryption.mapper_name,
+            tpm2_unlock=cfg.encryption.tpm2_unlock,
+            fido2_unlock=cfg.encryption.fido2_unlock,
+            header_path=cfg.encryption.header_path,
+        )
+        strategy = build_initramfs_strategy(
+            generator=cfg.initramfs.generator,
+            hooks=tuple(cfg.initramfs.hooks),
+            kernel=KernelSpec(kind=KernelKind(cfg.kernel.kind)),
+            encryption=encryption_spec,
+            mount_root=mount_root,
+        )
         return PlannedStep(
             id="initramfs",
             title="Generate initramfs",
             phase=StepPhase.INITRAMFS,
-            commands=MkinitcpioStrategy(
-                hooks=tuple(cfg.initramfs.hooks),
-                kernel=KernelSpec(kind=KernelKind(cfg.kernel.kind)),
-                mount_root=mount_root,
-            ).commands(),
+            commands=strategy.commands(),
             destructive=False,
-            description="write hooks snippet and run mkinitcpio",
+            description=f"generate initramfs via {cfg.initramfs.generator}",
         )
 
     def _bootloader_step(

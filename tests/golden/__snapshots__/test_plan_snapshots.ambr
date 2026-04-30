@@ -474,7 +474,7 @@
         "title": "Generate initramfs",
         "phase": "initramfs",
         "destructive": false,
-        "description": "write hooks snippet and run mkinitcpio",
+        "description": "generate initramfs via mkinitcpio",
         "commands": [
           {
             "argv": [
@@ -1250,7 +1250,7 @@
         "title": "Generate initramfs",
         "phase": "initramfs",
         "destructive": false,
-        "description": "write hooks snippet and run mkinitcpio",
+        "description": "generate initramfs via mkinitcpio",
         "commands": [
           {
             "argv": [
@@ -1716,7 +1716,7 @@
         "title": "Generate initramfs",
         "phase": "initramfs",
         "destructive": false,
-        "description": "write hooks snippet and run mkinitcpio",
+        "description": "generate initramfs via mkinitcpio",
         "commands": [
           {
             "argv": [
