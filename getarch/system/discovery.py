@@ -38,3 +38,8 @@ class IdentityProvider(Protocol):
 @runtime_checkable
 class IsoProvider(Protocol):
     def is_arch_iso(self) -> bool: ...
+
+
+@runtime_checkable
+class NetworkProvider(Protocol):
+    def internet_reachable(self, host: str) -> bool: ...
