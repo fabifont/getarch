@@ -182,6 +182,43 @@ def test_preflight_fails_when_package_missing() -> None:
         _call(pac=_Pac(exists=False))
 
 
+def test_preflight_fails_when_detached_luks_header_missing() -> None:
+    cfg_dict = dict(EXAMPLES["minimal-ext4"])
+    cfg_dict["encryption"] = {
+        "kind": "luks2",
+        "password": "x",
+        "header_path": "/no/such/header",
+    }
+    cfg_dict["initramfs"] = {
+        "generator": "mkinitcpio",
+        "hooks": [
+            "base",
+            "systemd",
+            "autodetect",
+            "modconf",
+            "kms",
+            "keyboard",
+            "sd-vconsole",
+            "block",
+            "sd-encrypt",
+            "filesystems",
+            "fsck",
+        ],
+    }
+    cfg = Config.model_validate(cfg_dict)
+    with pytest.raises(EnvErr, match="detached LUKS header"):
+        preflight_environment(
+            cfg,
+            _BD(_disks()),
+            _Env(),
+            _Fw(),
+            _Pac(),
+            _Identity(),
+            _Iso(),
+            _Net(),
+        )
+
+
 def test_preflight_fails_when_static_mirrorlist_missing() -> None:
     cfg_dict = dict(EXAMPLES["minimal-ext4"])
     cfg_dict["mirrors"] = {

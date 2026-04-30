@@ -46,6 +46,7 @@ def preflight_environment(
     _assert_locale(cfg, environment)
     _assert_packages(cfg, pacman)
     _assert_mirrors(cfg)
+    _assert_encryption(cfg)
 
     return EnvironmentReport(
         disks_found=paths,
@@ -130,4 +131,13 @@ def _assert_mirrors(cfg: Config) -> None:
     if not Path(cfg.mirrors.static_path).is_file():
         raise _EnvErr(
             f"static mirrorlist not found: {cfg.mirrors.static_path}",
+        )
+
+
+def _assert_encryption(cfg: Config) -> None:
+    if not cfg.encryption.header_path:
+        return
+    if not Path(cfg.encryption.header_path).is_file():
+        raise _EnvErr(
+            f"detached LUKS header not found: {cfg.encryption.header_path}",
         )

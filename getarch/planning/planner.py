@@ -107,6 +107,9 @@ class Planner:
             kind=EncryptionKind.LUKS2,
             password=Secret(cfg.encryption.password or ""),
             mapper_name=cfg.encryption.mapper_name,
+            tpm2_unlock=cfg.encryption.tpm2_unlock,
+            fido2_unlock=cfg.encryption.fido2_unlock,
+            header_path=cfg.encryption.header_path,
         )
         return PlannedStep(
             id="encryption",
