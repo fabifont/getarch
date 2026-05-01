@@ -69,6 +69,45 @@ class DiskBusyGuardStep:
 
 
 @dataclass(frozen=True, slots=True)
+class DiskWipeStep:
+    """Best-effort wipe of the target disk before partitioning.
+
+    Runs ``wipefs -a -f`` (clears every signature) and ``blkdiscard -f``
+    (best-effort: HDDs return non-zero, which is fine — we run with
+    ``check=False``). Inserted between :class:`DiskBusyGuardStep` and
+    runtime network/preflight only when ``cfg.disk.wipe_before`` is true.
+    """
+
+    target_disk_path: str
+    id: str = "disk-wipe"
+    title: str = "Wipe target disk signatures"
+    destructive: bool = True
+
+    def execute(self, ctx: ExecutionContext) -> StepResult:
+        results: list[CommandResult] = [
+            ctx.runner.run(
+                Command(
+                    argv=("wipefs", "-a", "-f", self.target_disk_path),
+                    description=f"clear filesystem signatures on {self.target_disk_path}",
+                ),
+            ),
+            ctx.runner.run(
+                Command(
+                    argv=("blkdiscard", "-f", self.target_disk_path),
+                    check=False,
+                    description=(
+                        f"discard blocks on {self.target_disk_path} (best-effort)"
+                    ),
+                ),
+            ),
+        ]
+        # blkdiscard non-zero is acceptable; only fail if wipefs failed.
+        wipefs_ok = results[0].ok
+        status = StepStatus.SUCCEEDED if wipefs_ok else StepStatus.FAILED
+        return StepResult(step_id=self.id, status=status, commands=tuple(results))
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeNetworkBootstrapStep:
     """Bring up wifi/wired before the runtime preflight needs internet.
 

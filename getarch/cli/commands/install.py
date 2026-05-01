@@ -27,6 +27,7 @@ from getarch.installers.confirmation import require_destructive_confirmation
 from getarch.installers.preflight import (
     AuditLogStep,
     DiskBusyGuardStep,
+    DiskWipeStep,
     RuntimeNetworkBootstrapStep,
     RuntimePreflightStep,
 )
@@ -142,6 +143,8 @@ def _execute_pipeline(
                 target_disk_path=cfg.disk.path,
             ),
         )
+    if not dry_run and cfg.disk.wipe_before:
+        steps.append(DiskWipeStep(target_disk_path=cfg.disk.path))
     if not dry_run and cfg.network.bootstrap is not None:
         bootstrap = cfg.network.bootstrap
         steps.append(
