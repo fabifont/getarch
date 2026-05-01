@@ -60,10 +60,14 @@ class Planner:
         self,
         *,
         cfg: Config,
-        disk: Disk,
+        disk: Disk | None = None,
         mount_root: Path,
         cpu_vendor: str | None = None,
     ) -> InstallPlan:
+        if cfg.firmware == "container":
+            return self._build_container_plan(cfg, mount_root)
+        if disk is None:
+            raise PlanError("disk is required for non-container plans")
         encrypted = cfg.encryption.kind == "luks2"
         microcode = self._resolve_microcode(cfg, cpu_vendor)
         steps: list[PlannedStep] = []
@@ -82,6 +86,69 @@ class Planner:
             return InstallPlan(version=_PLAN_VERSION, steps=tuple(steps))
         except ValueError as exc:
             raise PlanError(f"plan invalid: {exc}") from exc
+
+    def _build_container_plan(
+        self,
+        cfg: Config,
+        mount_root: Path,
+    ) -> InstallPlan:
+        """Plan for an install that runs *inside* an already-bootstrapped
+        container/chroot.
+
+        Skips disk/encryption/filesystem/bootloader/initramfs/cleanup/reboot
+        steps. The host caller is expected to have prepared a writable
+        chroot at ``mount_root`` (e.g. ``arch-chroot`` or ``systemd-nspawn``)
+        and provided pacman + an existing pacman-key keyring inside it.
+        """
+        steps: list[PlannedStep] = []
+        self._extend_pre_disk(steps, cfg, mount_root)
+        steps.append(self._packages_step_container(cfg, mount_root))
+        steps.append(self._system_config_step(cfg, mount_root))
+        network_step = self._network_config_step(cfg, mount_root)
+        if network_step is not None:
+            steps.append(network_step)
+        nftables_step = self._nftables_step(cfg, mount_root)
+        if nftables_step is not None:
+            steps.append(nftables_step)
+        services_step = self._services_step(cfg)
+        if services_step.commands:
+            steps.append(services_step)
+        steps.append(self._users_step(cfg))
+        try:
+            return InstallPlan(version=_PLAN_VERSION, steps=tuple(steps))
+        except ValueError as exc:
+            raise PlanError(f"plan invalid: {exc}") from exc
+
+    def _packages_step_container(
+        self, cfg: Config, mount_root: Path,
+    ) -> PlannedStep:
+        # Inside a container we can't pacstrap (no /proc, no fresh
+        # bootstrap). Use the existing pacman that the container image
+        # ships with: arch-chroot wraps pacman -S, so the planner just
+        # records the package list.
+        del mount_root  # unused in container mode (chroot handles it)
+        pkgs = list(cfg.packages)
+        if cfg.network.backend == "networkmanager" and "networkmanager" not in pkgs:
+            pkgs.append("networkmanager")
+        if cfg.network.backend == "iwd" and "iwd" not in pkgs:
+            pkgs.append("iwd")
+        if cfg.network.firewall_nftables_rules and "nftables" not in pkgs:
+            pkgs.append("nftables")
+        return PlannedStep(
+            id="packages",
+            title="Install packages (container mode)",
+            phase=StepPhase.PACKAGES,
+            commands=(
+                Command(
+                    argv=("pacman", "-Sy", "--needed", "--noconfirm", *pkgs),
+                    description=(
+                        f"pacman -Sy --needed {len(pkgs)} packages in container"
+                    ),
+                ),
+            ),
+            destructive=False,
+            description="install base packages with pacman -Sy --needed",
+        )
 
     # --- build helpers ---------------------------------------------------
 

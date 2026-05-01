@@ -7,6 +7,10 @@ from getarch.errors import SemanticConfigError
 
 
 def validate_semantics(cfg: Config) -> None:
+    # Firmware check first so container-mode users get the explicit
+    # "incompatible with X" error before downstream checks fire on
+    # fields that container mode will not honour anyway.
+    _check_firmware_bootloader(cfg)
     _check_kernel_in_packages(cfg)
     _check_locale_consistency(cfg)
     _check_encryption_initramfs(cfg)
@@ -16,7 +20,6 @@ def validate_semantics(cfg: Config) -> None:
     _check_home_layout(cfg)
     _check_luks_home_incompatible(cfg)
     _check_mountpoints(cfg)
-    _check_firmware_bootloader(cfg)
     _check_detached_header(cfg)
     _check_lvm_layout(cfg)
 
@@ -163,6 +166,26 @@ def _check_firmware_bootloader(cfg: Config) -> None:
             f"firmware='bios' requires bootloader.kind='grub'; got "
             f"{cfg.bootloader.kind!r}",
         )
+    if cfg.firmware == "container":
+        # Container mode skips disk/encryption/bootloader entirely; reject
+        # configs that try to combine it with disk-side surface so the
+        # user gets an explicit error instead of silently-ignored fields.
+        if cfg.encryption.kind != "none":
+            raise SemanticConfigError(
+                "firmware='container' is incompatible with encryption "
+                "(no LUKS inside a chroot install). Use 'uefi' or 'bios'.",
+            )
+        if cfg.swap.kind == "partition":
+            raise SemanticConfigError(
+                "firmware='container' cannot manage a swap partition. "
+                "Use swap.kind in {'none', 'swapfile', 'zram'}.",
+            )
+        if cfg.partitioning.lvm is not None or cfg.partitioning.custom is not None:
+            raise SemanticConfigError(
+                "firmware='container' is incompatible with "
+                "partitioning.lvm and partitioning.custom (no disk to "
+                "partition).",
+            )
 
 
 _LUKSHEADER_DEVICE_PATH = "/dev/disk/by-partlabel/cryptheader"

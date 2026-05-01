@@ -443,7 +443,7 @@ class MountpointConfig(_Frozen):
 
 class Config(_Frozen):
     version: Literal[1]
-    firmware: Literal["uefi", "bios"] = "uefi"
+    firmware: Literal["uefi", "bios", "container"] = "uefi"
     disk: DiskConfig
     partitioning: PartitionLayout
     filesystem: FilesystemConfig
