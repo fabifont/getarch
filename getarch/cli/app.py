@@ -18,6 +18,9 @@ from getarch.cli.commands import (
     install as install_cmd,
 )
 from getarch.cli.commands import (
+    microcode as microcode_cmd,
+)
+from getarch.cli.commands import (
     plan as plan_cmd,
 )
 from getarch.cli.commands import (
@@ -82,6 +85,7 @@ app.command("examples")(examples_cmd.run)
 app.command("discover")(discover_cmd.run)
 app.command("tui")(tui_cmd.run)
 app.command("verify")(verify_cmd.run)
+app.command("microcode")(microcode_cmd.run)
 app.command("version")(version_cmd.run)
 
 
