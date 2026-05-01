@@ -215,101 +215,80 @@ adversarial reviews. Each one has a clear contract; none requires new
 hardware.
 
 ### Boot-time access to detached LUKS header
-* **Why:** `EncryptionConfig.header_path` is currently rejected at the
-  schema layer because no bootloader/initramfs path in getarch can
-  guarantee header availability at boot.
-* **Plan:** support a small "header carrier" partition (FAT) with the
-  header copied in, plus a mkinitcpio/dracut hook that mounts it
-  read-only before `cryptsetup open`. Re-enable the schema field once
-  one of {systemd-boot, grub, uki} can render the matching cmdline
-  + initramfs glue.
-* **Modules:** new
-  `getarch/planning/strategies/encryption_header_carrier.py`,
-  bootloader cmdline tweaks, schema unblock.
-* **Tests:** golden snapshots for each (fs × bootloader) combo.
+* **Status:** done (carrier partition). New `efi-luksheader-root` /
+  `efi-swap-luksheader-root` layouts emit a 16 MiB `cryptheader` GPT
+  partition. `EncryptionConfig.header_path` (typically
+  `/dev/disk/by-partlabel/cryptheader`) threads through `cryptsetup
+  --header` calls and the bootloader cmdline (`rd.luks.options=header=…`).
+  Semantic validator binds the field to the carrier layout.
 
 ### Encrypted `/home` partition
-* **Why:** `LUKS2 + efi-home-root` is currently rejected because the
-  planner only encrypts root.
-* **Plan:** second `cryptsetup luksFormat` for the home partition, an
-  `EncryptionConfig.home_password` (or shared key + key-file derivation),
-  and a `crypttab` entry so `systemd-cryptsetup@home` unlocks it on
-  boot.
-* **Risks:** unattended unlock UX (prompt twice, or one-key-unlocks-both
-  via a key-file on the unlocked root).
+* **Status:** done. `EncryptionConfig.home_kind` accepts `"shared-key"`
+  (reuse root password) or `"separate-key"` (require
+  `home_password`). The planner emits a new `encryption-home` step that
+  formats and opens `/dev/mapper/homecrypt`; the filesystem strategy
+  uses the mapper device for home; a `crypttab-home` step writes the
+  entry into `/etc/crypttab` with the UUID resolved at execution time.
 
 ### `home_size_mib = null` rest-of-disk
-* **Why:** semantic validator currently requires `home_size_mib` for any
-  layout containing `home` because sgdisk silently skipped the
-  partition. Docs originally promised "omit to use rest of disk".
-* **Plan:** reverse the sgdisk allocation when `home_size_mib is None` —
-  give root a fixed slice (config-defined `root_size_mib`, default
-  `32_768`) and `home` gets `0` (sgdisk-speak for "rest of disk").
-* **Modules:** schema, `SgdiskStrategy`, semantic validator.
+* **Status:** done. New `partitioning.root_size_mib` lets the user fix
+  the root slice; `home` then takes the rest of the disk (sgdisk's `0`
+  end token). Semantic validator rejects setting both at once.
 
 ### TUI execution mode
-* **Why:** `getarch tui` is read-only. Wiring the install pipeline behind
-  the TUI lets users watch progress and respond to confirmations
-  interactively.
-* **Plan:** new Textual screen subscribed to a queue that
-  `LoggingRunner` produces; render commands as they run; surface
-  confirmation prompts via a modal.
+* **Status:** done (MVP). `getarch tui --execute` opens a new Textual
+  screen that runs the install pipeline behind a worker thread and
+  tails the `LoggingRunner` buffer into a scrollable log view. Real
+  execution is gated on dry-run for now; modal confirmations land
+  later (see P5/P6 for follow-ups).
 
 ### Resume safety: config fingerprint
-* **Why:** `--resume` currently trusts step IDs. If the config changes
-  between runs, the same IDs may correspond to different commands.
-* **Plan:** persist a SHA-256 of the rendered plan JSON in
-  `PipelineState`. `--resume` refuses to continue when the fingerprint
-  mismatches; `--resume --force-fingerprint` overrides for users who
-  understand the risk.
+* **Status:** done. `PipelineState.plan_fingerprint` (SHA-256 of the
+  rendered plan JSON) persists alongside the completed step list.
+  `--resume` refuses to continue when the fingerprint differs from the
+  current plan unless `--force-fingerprint` is also passed.
+  `PipelineState.schema_version` bumps to 2; v1 state files are still
+  readable.
 
 ### Plan diff against installed system
-* **Why:** `getarch diff CONFIG_A CONFIG_B` compares two configs.
-  Comparing a proposed config against the *last applied* state would
-  catch unintended drift before re-installing.
-* **Plan:** read `<mount>/var/log/getarch.state.json` (or a hashed
-  version of the original config persisted alongside) and diff the
-  rendered plan IDs.
+* **Status:** done. `getarch diff CONFIG --against-installed` reads the
+  plan JSON persisted in `PipelineState.plan_blob` from the previous
+  install and renders a unified diff against the new plan.
 
 ### Disk wipe before partition (`disk.wipe_before`)
-* **Why:** the schema field exists today (`DiskConfig.wipe_before`) but
-  the planner ignores it.
-* **Plan:** new `DiskWipeStep` (between `disk-busy-guard` and
-  `partitioning`) running `blkdiscard -f` for SSDs, `cryptsetup erase`
-  for an existing LUKS header, or `wipefs -a` as a fallback. Off by
-  default; opt-in.
+* **Status:** done. New `DiskWipeStep` is inserted between
+  `disk-busy-guard` and the runtime preflight when
+  `disk.wipe_before=true`. Runs `wipefs -a -f` (fails the step on
+  failure) and `blkdiscard -f` (best-effort, HDDs return non-zero).
 
 ### Mirror reachability preflight
-* **Why:** the mirrors step touches `reflector` / a static mirrorlist
-  but never validates that the chosen mirrors actually serve packages.
-* **Plan:** new preflight check that fetches the first mirror's
-  `core/os/x86_64/core.db` HEAD and times out after 10s; warns on slow
-  mirrors, refuses on unreachable.
+* **Status:** done. When `mirrors.strategy="static"` and the file
+  exists, preflight fetches `core/os/x86_64/core.db` against the first
+  uncommented mirror with a 10s HEAD timeout. Refuses on URL errors,
+  socket errors, timeouts, or HTTP 4xx/5xx.
 
 ### `getarch verify CONFIG`
-* **Why:** users sometimes want to re-run preflight against an existing
-  config without building/printing the plan.
-* **Plan:** new CLI subcommand that calls `preflight_environment` then
-  prints the report (`text` and `json` modes).
+* **Status:** done. New CLI subcommand re-runs `preflight_environment`
+  and prints the report. JSON mode (`--json`) emits the full
+  dataclass; default text mode prints a compact summary.
 
 ### `getarch microcode CONFIG`
-* **Why:** quick way to confirm what microcode the planner will resolve
-  for the current host.
-* **Plan:** small subcommand: load config, read `cpu_vendor`, print
-  resolved `MicrocodeKind`.
+* **Status:** done. Loads the config, reads `cpu_vendor` via
+  `IsoEnvironment`, prints the resolved `MicrocodeKind` and the
+  package it would add.
 
 ### Snapper-aware destructive guard
-* **Why:** when an existing system has snapper snapshots, the install
-  blast radius extends to those snapshots if the user reinstalls onto
-  the same disk.
-* **Plan:** new preflight that lists snapshots discovered on
-  `cfg.disk.path` and surfaces them in the destructive confirmation
-  text.
+* **Status:** done. `BlockDeviceProvider.target_disk_filesystems`
+  enumerates all `(partition, fstype)` pairs on the target disk via
+  `lsblk -J -o NAME,FSTYPE`. The destructive confirmation prompt
+  surfaces them and explicitly warns when btrfs is detected (snapshots
+  / subvolumes will be wiped).
 
 ### Locale: multi-locale support
-* **Why:** schema only accepts one `locale.locale` line.
-* **Plan:** widen `locale.locale` to `list[str]`; emit one line per
-  entry into `/etc/locale.gen`.
+* **Status:** done. `locale.locale` accepts `list[str]` (or a single
+  string for back-compat). Each entry produces one `/etc/locale.gen`
+  line. Semantic validator requires `locale.lang` to be a prefix of at
+  least one entry.
 
 ## P5 — extended features
 
