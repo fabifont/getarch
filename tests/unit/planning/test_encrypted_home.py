@@ -59,7 +59,7 @@ def test_shared_key_path_emits_encryption_home_step_and_uses_mapper() -> None:
     flat = " ".join(arg for c in fs_step.commands for arg in c.argv)
     assert "/dev/mapper/homecrypt" in flat
     assert "by-partlabel/home" not in flat
-    crypttab = next(s for s in plan.steps if s.id == "crypttab-home")
+    crypttab = next(s for s in plan.steps if s.id == "crypttab")
     bash = crypttab.commands[0]
     assert "blkid" in bash.argv[2]
     assert "homecrypt" in bash.argv[2]

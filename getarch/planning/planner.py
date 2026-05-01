@@ -326,33 +326,47 @@ class Planner:
         )
 
     def _crypttab_step(self, cfg: Config, mount_root: Path) -> PlannedStep | None:
-        if (
-            cfg.encryption.kind != "luks2"
-            or cfg.encryption.home_kind == "none"
-            or "home" not in cfg.partitioning.layout
-        ):
-            return None
         crypttab_path = mount_root / "etc/crypttab"
-        partition = "/dev/disk/by-partlabel/home"
-        # Resolve UUID at execution time to keep the crypttab line stable
-        # across re-installs.
-        script = (
-            "set -euo pipefail\n"
-            f'HOME_UUID="$(blkid -s UUID -o value {partition})"\n'
-            f'echo "homecrypt UUID=${{HOME_UUID}} none luks" >> {crypttab_path}\n'
+        lines: list[str] = []
+        wants_home = (
+            cfg.encryption.kind == "luks2"
+            and cfg.encryption.home_kind != "none"
+            and "home" in cfg.partitioning.layout
         )
+        if wants_home:
+            home_partition = "/dev/disk/by-partlabel/home"
+            lines.append(
+                'HOME_UUID="$(blkid -s UUID -o value '
+                + home_partition
+                + ')"',
+            )
+            lines.append(
+                f'echo "homecrypt UUID=${{HOME_UUID}} none luks" >> {crypttab_path}',
+            )
+        if cfg.swap.kind == "partition" and cfg.swap.encrypt:
+            # Static line — random key on every boot, no UUID needed
+            # because the systemd-cryptsetup generator opens the device
+            # by partlabel directly.
+            lines.append(
+                f'echo "swapcrypt /dev/disk/by-partlabel/swap '
+                f'/dev/urandom swap,plain,'
+                f'cipher=aes-xts-plain64,size=256" >> {crypttab_path}',
+            )
+        if not lines:
+            return None
+        script = "set -euo pipefail\n" + "\n".join(lines) + "\n"
         return PlannedStep(
-            id="crypttab-home",
-            title="Append /home to crypttab",
+            id="crypttab",
+            title="Append crypttab entries",
             phase=StepPhase.FSTAB,
             commands=(
                 Command(
                     argv=("bash", "-c", script),
-                    description=f"append homecrypt entry to {crypttab_path}",
+                    description=f"append crypttab lines to {crypttab_path}",
                 ),
             ),
             destructive=False,
-            description=f"add homecrypt UUID to {crypttab_path}",
+            description=f"populate {crypttab_path}",
         )
 
     def _fstab_step(self, mount_root: Path) -> PlannedStep:
@@ -675,6 +689,59 @@ class Planner:
                 ).commands(),
                 destructive=False,
                 description="write zram-generator.conf for /dev/zram0",
+            )
+        if cfg.swap.kind == "partition":
+            partition = "/dev/disk/by-partlabel/swap"
+            cmds: list[Command] = []
+            if cfg.swap.encrypt:
+                # Plain dm-crypt with a fresh random key on every boot.
+                # genfstab will write the mapper into /etc/fstab; the
+                # crypttab step appends the volatile key entry.
+                cmds.append(
+                    Command(
+                        argv=(
+                            "cryptsetup",
+                            "open",
+                            "--type",
+                            "plain",
+                            "--key-file",
+                            "/dev/urandom",
+                            "--key-size",
+                            "256",
+                            "--cipher",
+                            "aes-xts-plain64",
+                            partition,
+                            "swapcrypt",
+                        ),
+                        description="open random-key swap mapper",
+                    ),
+                )
+                target = "/dev/mapper/swapcrypt"
+            else:
+                target = partition
+            cmds.append(
+                Command(
+                    argv=("mkswap", target),
+                    description=f"format {target} as swap",
+                ),
+            )
+            cmds.append(
+                Command(
+                    argv=("swapon", target),
+                    description=f"activate swap on {target}",
+                ),
+            )
+            return PlannedStep(
+                id="swap",
+                title="Activate swap partition",
+                phase=StepPhase.SWAP,
+                commands=tuple(cmds),
+                destructive=True,
+                description=(
+                    "encrypted swap (random key on every boot)"
+                    if cfg.swap.encrypt
+                    else "format and activate swap partition"
+                ),
             )
         return None
 

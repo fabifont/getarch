@@ -100,11 +100,17 @@ class SwapConfig(_Frozen):
     kind: Literal["none", "partition", "swapfile", "zram"] = "none"
     size_mib: int | None = Field(default=None, ge=128)
     zram_size_mib: int | None = Field(default=None, ge=64)
+    encrypt: bool = False
 
     @model_validator(mode="after")
     def _size_required(self) -> SwapConfig:
         if self.kind == "swapfile" and self.size_mib is None:
             raise ValueError("swap.size_mib required when kind='swapfile'")
+        if self.encrypt and self.kind != "partition":
+            raise ValueError(
+                "swap.encrypt requires swap.kind='partition' (random-key "
+                "dm-crypt only makes sense for a real swap partition)",
+            )
         return self
 
 
