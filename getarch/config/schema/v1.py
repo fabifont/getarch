@@ -145,12 +145,25 @@ class IwdNetworkConfig(_Frozen):
     psk: str
 
 
+class WifiBootstrap(_Frozen):
+    kind: Literal["iwctl"] = "iwctl"
+    device: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
+    ssid: str
+    psk: str
+
+
+class WiredBootstrap(_Frozen):
+    kind: Literal["dhcp"] = "dhcp"
+    device: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
+
+
 class NetworkConfig(_Frozen):
     hostname: str
     backend: Literal["networkmanager", "systemd-networkd", "iwd"] = "networkmanager"
     extra_packages: list[str] = Field(default_factory=list)
     systemd_networkd: list[SystemdNetworkdProfile] = Field(default_factory=list)
     iwd_networks: list[IwdNetworkConfig] = Field(default_factory=list)
+    bootstrap: WifiBootstrap | WiredBootstrap | None = Field(default=None)
 
 
 class ServicesConfig(_Frozen):

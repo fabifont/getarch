@@ -69,6 +69,64 @@ class DiskBusyGuardStep:
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeNetworkBootstrapStep:
+    """Bring up wifi/wired before the runtime preflight needs internet.
+
+    Wraps ``iwctl station <dev> connect <ssid>`` (with PSK piped in) for
+    wifi or ``dhcpcd <dev>`` for wired DHCP. Inserted by the install
+    command immediately *before* :class:`RuntimePreflightStep`.
+    """
+
+    backend: str
+    device: str
+    ssid: str | None = None
+    psk: str | None = None
+    id: str = "runtime-network-bootstrap"
+    title: str = "Bring up network"
+    destructive: bool = False
+
+    def execute(self, ctx: ExecutionContext) -> StepResult:
+        results: list[CommandResult] = []
+        if self.backend == "iwctl":
+            if not self.ssid or self.psk is None:
+                raise _EnvErr("wifi bootstrap requires ssid and psk")
+            results.append(
+                ctx.runner.run(
+                    Command(
+                        argv=(
+                            "iwctl",
+                            "--passphrase",
+                            self.psk,
+                            "station",
+                            self.device,
+                            "connect",
+                            self.ssid,
+                        ),
+                        sensitive=True,
+                        description=(
+                            f"connect {self.device} to wifi {self.ssid}"
+                        ),
+                    ),
+                ),
+            )
+        elif self.backend == "dhcp":
+            results.append(
+                ctx.runner.run(
+                    Command(
+                        argv=("dhcpcd", self.device),
+                        description=f"start dhcpcd on {self.device}",
+                    ),
+                ),
+            )
+        else:
+            raise _EnvErr(f"unknown bootstrap backend {self.backend!r}")
+        status = (
+            StepStatus.SUCCEEDED if all(r.ok for r in results) else StepStatus.FAILED
+        )
+        return StepResult(step_id=self.id, status=status, commands=tuple(results))
+
+
+@dataclass(frozen=True, slots=True)
 class AuditLogStep:
     """Persist :class:`LoggingRunner` lines to the target before cleanup.
 

@@ -26,6 +26,7 @@ from getarch.installers.confirmation import require_destructive_confirmation
 from getarch.installers.preflight import (
     AuditLogStep,
     DiskBusyGuardStep,
+    RuntimeNetworkBootstrapStep,
     RuntimePreflightStep,
 )
 from getarch.planning.planner import Planner
@@ -107,6 +108,16 @@ def _execute_pipeline(
             DiskBusyGuardStep(
                 block_devices=LsblkBlockDevices(runner=RealRunner()),
                 target_disk_path=cfg.disk.path,
+            ),
+        )
+    if not dry_run and cfg.network.bootstrap is not None:
+        bootstrap = cfg.network.bootstrap
+        steps.append(
+            RuntimeNetworkBootstrapStep(
+                backend=bootstrap.kind,
+                device=bootstrap.device,
+                ssid=getattr(bootstrap, "ssid", None),
+                psk=getattr(bootstrap, "psk", None),
             ),
         )
     if not skip_runtime_preflight and not dry_run:
