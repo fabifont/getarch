@@ -18,6 +18,7 @@ def validate_semantics(cfg: Config) -> None:
     _check_mountpoints(cfg)
     _check_firmware_bootloader(cfg)
     _check_detached_header(cfg)
+    _check_lvm_layout(cfg)
 
 
 def _check_kernel_in_packages(cfg: Config) -> None:
@@ -147,6 +148,45 @@ def _check_firmware_bootloader(cfg: Config) -> None:
 
 
 _LUKSHEADER_DEVICE_PATH = "/dev/disk/by-partlabel/cryptheader"
+
+
+def _check_lvm_layout(cfg: Config) -> None:
+    if cfg.partitioning.lvm is None:
+        return
+    if cfg.encryption.kind != "luks2":
+        raise SemanticConfigError(
+            "partitioning.lvm requires encryption.kind='luks2' "
+            "(LVM-on-LUKS sits the VG on top of the root LUKS mapper)",
+        )
+    if cfg.swap.kind == "partition":
+        raise SemanticConfigError(
+            "partitioning.lvm conflicts with swap.kind='partition'; "
+            "declare a swap LV in lvm.volumes (and set swap.kind='swapfile' "
+            "pointing at /swap on that LV) or use swap.kind='zram'",
+        )
+    if cfg.encryption.home_kind != "none":
+        raise SemanticConfigError(
+            "partitioning.lvm conflicts with encryption.home_kind != 'none'; "
+            "the home LV inherits the root LUKS encryption automatically",
+        )
+    if cfg.initramfs.generator == "mkinitcpio":
+        hooks = list(cfg.initramfs.hooks)
+        if "lvm2" not in hooks:
+            raise SemanticConfigError(
+                "partitioning.lvm requires the 'lvm2' hook in "
+                "initramfs.hooks (place it after 'encrypt'/'sd-encrypt' so "
+                "the LVM activation runs against the unlocked LUKS mapper)",
+            )
+    fs_kinds = {v.filesystem for v in cfg.partitioning.lvm.volumes}
+    pkg_for = {"ext4": "e2fsprogs", "btrfs": "btrfs-progs",
+               "xfs": "xfsprogs", "f2fs": "f2fs-tools"}
+    needed = {pkg_for[k] for k in fs_kinds}
+    missing = needed - set(cfg.packages)
+    if missing:
+        raise SemanticConfigError(
+            "partitioning.lvm needs the following filesystem packages in "
+            f"packages: {sorted(missing)}",
+        )
 
 
 def _check_detached_header(cfg: Config) -> None:

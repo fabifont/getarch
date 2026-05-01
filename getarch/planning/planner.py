@@ -27,6 +27,7 @@ from getarch.planning.strategies.bootloader import (
 from getarch.planning.strategies.encryption import build_encryption_strategy
 from getarch.planning.strategies.filesystem import build_filesystem_strategy
 from getarch.planning.strategies.initramfs import build_initramfs_strategy
+from getarch.planning.strategies.lvm import LvmStrategy, LvmVolumePlan
 from getarch.planning.strategies.mirrors import build_mirror_strategy
 from getarch.planning.strategies.mountpoints import (
     MountpointPlan,
@@ -117,19 +118,34 @@ class Planner:
             and "home" in cfg.partitioning.layout
         ):
             steps.append(self._encryption_home_step(cfg))
-        root_partition = (
-            f"/dev/mapper/{cfg.encryption.mapper_name}"
-            if encrypted
-            else "/dev/disk/by-partlabel/system"
-        )
+        if cfg.partitioning.lvm is not None:
+            steps.append(self._lvm_create_step(cfg))
+        root_partition = self._root_device(cfg, encrypted=encrypted)
         efi_partition = None if cfg.firmware == "bios" else "/dev/disk/by-partlabel/EFI"
-        steps.extend(self._filesystem_steps(cfg, root_partition, efi_partition, mount_root))
+        if cfg.partitioning.lvm is not None:
+            steps.extend(self._lvm_filesystem_steps(cfg, efi_partition, mount_root))
+        else:
+            steps.extend(
+                self._filesystem_steps(cfg, root_partition, efi_partition, mount_root),
+            )
         swap_step = self._swap_step(cfg, mount_root)
         if swap_step is not None:
             steps.append(swap_step)
         custom_mounts_step = self._custom_mountpoints_step(cfg, mount_root)
         if custom_mounts_step is not None:
             steps.append(custom_mounts_step)
+
+    def _root_device(self, cfg: Config, *, encrypted: bool) -> str:
+        if cfg.partitioning.lvm is not None:
+            root_lv = next(
+                v for v in cfg.partitioning.lvm.volumes if v.mountpoint == "/"
+            )
+            return f"/dev/{cfg.partitioning.lvm.vg_name}/{root_lv.name}"
+        return (
+            f"/dev/mapper/{cfg.encryption.mapper_name}"
+            if encrypted
+            else "/dev/disk/by-partlabel/system"
+        )
 
     def _extend_system_phase(
         self,
@@ -348,6 +364,118 @@ class Planner:
             commands=mount_cmds,
             destructive=False,
             description=f"mount root and ESP under {mount_root}",
+        )
+        return fs_step, mount_step
+
+    def _lvm_create_step(self, cfg: Config) -> PlannedStep:
+        assert cfg.partitioning.lvm is not None  # narrowing
+        pv_device = f"/dev/mapper/{cfg.encryption.mapper_name}"
+        plans = tuple(
+            LvmVolumePlan(
+                name=v.name,
+                size_mib=v.size_mib,
+                mountpoint=v.mountpoint,
+                filesystem=v.filesystem,
+            )
+            for v in cfg.partitioning.lvm.volumes
+        )
+        cmds = LvmStrategy(
+            pv_device=pv_device,
+            vg_name=cfg.partitioning.lvm.vg_name,
+            volumes=plans,
+        ).commands()
+        return PlannedStep(
+            id="lvm-create",
+            title="Create LVM volume group + logical volumes",
+            phase=StepPhase.ENCRYPTION,
+            commands=cmds,
+            destructive=True,
+            description=(
+                f"pvcreate {pv_device}; vgcreate "
+                f"{cfg.partitioning.lvm.vg_name}; "
+                f"lvcreate x {len(cfg.partitioning.lvm.volumes)}"
+            ),
+        )
+
+    def _lvm_filesystem_steps(
+        self,
+        cfg: Config,
+        efi_partition: str | None,
+        mount_root: Path,
+    ) -> tuple[PlannedStep, PlannedStep]:
+        assert cfg.partitioning.lvm is not None  # narrowing
+        vg = cfg.partitioning.lvm.vg_name
+        # Sort by mountpoint depth so '/' lands first, then '/home',
+        # '/var', '/var/log', etc. — required for `mount` to layer
+        # correctly under mount_root.
+        vols = sorted(
+            cfg.partitioning.lvm.volumes,
+            key=lambda v: v.mountpoint.count("/"),
+        )
+        mkfs_cmds: list[Command] = []
+        mount_cmds: list[Command] = []
+        for vol in vols:
+            device = f"/dev/{vg}/{vol.name}"
+            mkfs_cmds.append(
+                Command(
+                    argv=(f"mkfs.{vol.filesystem}", "-F", device)
+                    if vol.filesystem in {"ext4", "f2fs"}
+                    else (f"mkfs.{vol.filesystem}", "-f", device),
+                    description=f"mkfs.{vol.filesystem} {device}",
+                ),
+            )
+            target = (
+                str(mount_root)
+                if vol.mountpoint == "/"
+                else str(mount_root) + vol.mountpoint
+            )
+            mount_cmds.append(
+                Command(
+                    argv=("mkdir", "-p", target),
+                    description=f"mkdir {target}",
+                ),
+            )
+            mount_cmds.append(
+                Command(
+                    argv=("mount", device, target),
+                    description=f"mount {device} at {target}",
+                ),
+            )
+        if efi_partition is not None:
+            mkfs_cmds.append(
+                Command(
+                    argv=("mkfs.fat", "-F", "32", efi_partition),
+                    description=f"mkfs.fat -F 32 {efi_partition}",
+                ),
+            )
+            esp_target = str(mount_root / "boot")
+            mount_cmds.append(
+                Command(
+                    argv=("mkdir", "-p", esp_target),
+                    description=f"mkdir {esp_target}",
+                ),
+            )
+            mount_cmds.append(
+                Command(
+                    argv=("mount", efi_partition, esp_target),
+                    description=f"mount ESP at {esp_target}",
+                ),
+            )
+        fs_step = PlannedStep(
+            id="filesystems",
+            title="Create filesystems on LVM",
+            phase=StepPhase.FILESYSTEMS,
+            commands=tuple(mkfs_cmds),
+            destructive=True,
+            description=f"mkfs x {len(mkfs_cmds)} on VG {vg} (+ ESP)",
+        )
+        mount_step = PlannedStep(
+            id="mounting",
+            title="Mount LVM volumes",
+            phase=StepPhase.MOUNTING,
+            commands=tuple(mount_cmds),
+            destructive=False,
+            description=f"mount LVs and ESP under {mount_root}",
         )
         return fs_step, mount_step
 

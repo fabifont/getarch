@@ -16,6 +16,50 @@ class DiskConfig(_Frozen):
     wipe_before: bool = False
 
 
+class LvmVolume(_Frozen):
+    """One logical volume inside the LVM-on-LUKS volume group.
+
+    ``size_mib`` is the explicit size in MiB; pass ``None`` exactly once
+    in :class:`LvmConfig.volumes` to mean "use the rest of the VG"
+    (i.e. ``lvcreate -l 100%FREE``).
+    """
+
+    name: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
+    size_mib: int | None = Field(default=None, ge=64)
+    mountpoint: str = Field(pattern=r"^/.*")
+    filesystem: Literal["ext4", "btrfs", "xfs", "f2fs"] = "ext4"
+
+
+class LvmConfig(_Frozen):
+    """LVM-on-LUKS volume group sitting on top of the root LUKS mapper.
+
+    Requires ``encryption.kind='luks2'`` (semantic check). Mutually
+    exclusive with the ``home`` partition role in
+    :attr:`PartitionLayout.layout` — declare a ``home`` LV instead.
+    """
+
+    vg_name: str = Field(default="system", pattern=r"^[a-zA-Z0-9_-]+$")
+    volumes: list[LvmVolume] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_volumes(self) -> LvmConfig:
+        names = [v.name for v in self.volumes]
+        if len(names) != len(set(names)):
+            raise ValueError("lvm.volumes have duplicate names")
+        mountpoints = [v.mountpoint for v in self.volumes]
+        if "/" not in mountpoints:
+            raise ValueError("lvm.volumes must include one with mountpoint='/'")
+        if len(set(mountpoints)) != len(mountpoints):
+            raise ValueError("lvm.volumes have duplicate mountpoints")
+        unsized = [v for v in self.volumes if v.size_mib is None]
+        if len(unsized) > 1:
+            raise ValueError(
+                "lvm.volumes may have at most one volume with no size_mib "
+                "(it consumes the rest of the VG)",
+            )
+        return self
+
+
 class PartitionLayout(_Frozen):
     layout: Literal[
         "efi-root",
@@ -29,6 +73,16 @@ class PartitionLayout(_Frozen):
     swap_size_mib: int | None = Field(default=None, ge=128)
     home_size_mib: int | None = Field(default=None, ge=1024)
     root_size_mib: int | None = Field(default=None, ge=4096)
+    lvm: LvmConfig | None = None
+
+    @model_validator(mode="after")
+    def _validate_lvm(self) -> PartitionLayout:
+        if self.lvm is not None and "home" in self.layout:
+            raise ValueError(
+                "partitioning.lvm conflicts with a 'home' partition role; "
+                "declare a home LV in lvm.volumes instead",
+            )
+        return self
 
 
 class BtrfsSubvolumeConfig(_Frozen):
