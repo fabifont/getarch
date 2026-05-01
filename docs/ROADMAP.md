@@ -296,7 +296,11 @@ Larger items that meaningfully widen the supported install surface.
 None are required for the base installer to be useful, but each one
 matches a real hardware/use case.
 
-### Custom partition table DSL on the target disk
+**Status:** 12/16 implemented and adversarially reviewed (commit b5c8d42).
+The four deferred items remain open: multi-disk btrfs raid, ZFS root,
+btrfs pre-snapshot, systemd-homed.
+
+### Custom partition table DSL on the target disk *(done — a46bb9d)*
 * **Why:** the current `partitioning.layout` enum only covers four
   predefined layouts. Power users want arbitrary partitions on the
   install target (e.g., separate `/var`, `/srv`, ZFS data partition).
@@ -310,7 +314,7 @@ matches a real hardware/use case.
   spans them via `mkfs.btrfs -m raid1 -d raid1 dev1 dev2`. Bootloader
   install needs to write to the EFI partition on each disk.
 
-### LVM-on-LUKS layout
+### LVM-on-LUKS layout *(done — 09e0409)*
 * **Why:** classical Linux server layout (one LUKS volume, LVM inside,
   multiple LVs).
 * **Plan:** new `LvmStrategy`; schema gains `lvm` block; encryption
@@ -321,24 +325,24 @@ matches a real hardware/use case.
 * **Plan:** opt-in via `archzfs` extra repo; `FilesystemKind.ZFS` +
   `ZfsStrategy`. Risk: ZFS module mismatch on kernel update.
 
-### systemd-networkd extras: VLAN, bridge, bond
+### systemd-networkd extras: VLAN, bridge, bond *(done — d0a6c7f)*
 * **Why:** datacentre / homelab installs need link-aggregation or VLAN
   trunks on first boot.
 * **Plan:** widen `SystemdNetworkdProfile` to render `*.netdev` and
   `*.link` files in addition to `*.network`.
 
-### WPA2-Enterprise (802.1x)
+### WPA2-Enterprise (802.1x) *(done — c9e6037, ca_cert_path b5c8d42)*
 * **Why:** corporate wifi.
 * **Plan:** new `WifiBootstrap.kind = "iwctl-eap"` with `username` /
-  `cert_path` / `private_key_path`. PSK-only path stays.
+  `cert_path` / `private_key_path` / `ca_cert_path`. PSK-only path stays.
 
-### WireGuard pre-install bootstrap
+### WireGuard pre-install bootstrap *(done — c9e6037)*
 * **Why:** boxes inside corporate VPNs only reach mirrors via
   WireGuard.
 * **Plan:** new bootstrap kind that writes `/etc/wireguard/wg0.conf`,
   enables `wg-quick@wg0` *before* the runtime preflight.
 
-### Encrypted swap
+### Encrypted swap *(done — 3668b01)*
 * **Why:** `LUKS2` root + a `swap` partition leaves the swap partition
   plaintext, so anything paged out of RAM (passwords, keys) can leak.
 * **Plan:** new `encryption-swap` planner step that runs
@@ -347,7 +351,7 @@ matches a real hardware/use case.
   target the mapper. Survives reboot via systemd's
   `systemd-cryptsetup@swapcrypt.service` reading from crypttab.
 
-### Auto-unlock for encrypted /home
+### Auto-unlock for encrypted /home *(done — 375de93)*
 * **Why:** `home_kind="shared-key"` currently prompts the user for the
   passphrase twice (root + home) because crypttab uses `none` for the
   key source.
@@ -356,14 +360,14 @@ matches a real hardware/use case.
   entry to point at it. systemd unlocks `/home` automatically after
   pivot.
 
-### TUI execution: confirmation modals + real runner
+### TUI execution: confirmation modals + real runner *(done — 64332b8)*
 * **Why:** `getarch tui --execute` runs the dry-run pipeline. Live
   install needs interactive confirmations and password prompts.
 * **Plan:** Textual modal screen wrapping the destructive confirmation
   prompt; password prompts piped to the runner via a thread-safe
   callback.
 
-### nftables ruleset rendering
+### nftables ruleset rendering *(done — 37eac66)*
 * **Why:** users want a baseline firewall on first boot.
 * **Plan:** schema field for a list of rules; planner writes
   `/etc/nftables.conf` and enables `nftables.service`.
@@ -380,20 +384,20 @@ matches a real hardware/use case.
 * **Plan:** schema toggle `users.regular[].kind = "homed"`; planner
   runs `homectl create` instead of `useradd`.
 
-### Container / chroot install mode
+### Container / chroot install mode *(done — d226faf, b5c8d42)*
 * **Why:** install into a pre-mounted directory without touching disks
   (useful for image builds, OCI layers).
 * **Plan:** `firmware: "container"` skips partitioning + bootloader +
   initramfs + cleanup steps; everything else runs into a user-supplied
   `--mount-root`.
 
-### Reproducible builds
+### Reproducible builds *(done — ed08c96)*
 * **Why:** zipapp + wheel should be byte-identical for the same git
   commit.
 * **Plan:** set `SOURCE_DATE_EPOCH` in the release workflow; pass
-  `--build-id` to shiv; verify with `diffoscope` in CI.
+  `--build-id` to shiv; verify by re-build + `cmp` in CI.
 
-### AUR PKGBUILD
+### AUR PKGBUILD *(done — ed08c96)*
 * **Why:** make `getarch` installable from the AUR for Arch users who
   don't want to pull from PyPI.
 * **Plan:** publish a thin PKGBUILD that wraps `pip install getarch`
