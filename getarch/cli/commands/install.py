@@ -7,6 +7,7 @@ from pathlib import Path
 import click
 import typer
 
+from getarch.cli.commands.discover import build_discovery_runner
 from getarch.cli.output import GetarchConsole
 from getarch.config.loader import load_config
 from getarch.config.schema.v1 import Config
@@ -41,7 +42,9 @@ from getarch.system.preflight import EnvironmentReport, preflight_environment
 
 
 def _discover_disks() -> tuple[Disk, ...]:
-    return LsblkBlockDevices(runner=RealRunner()).list_disks()
+    return LsblkBlockDevices(
+        runner=build_discovery_runner(no_cache=False),
+    ).list_disks()
 
 
 def _build_runner(*, dry_run: bool) -> CommandRunner:
@@ -60,7 +63,9 @@ def _resolve_environment(
             "(--skip-environment-preflight)[/yellow]",
         )
         try:
-            vendor = IsoEnvironment(runner=RealRunner()).cpu_vendor()
+            vendor = IsoEnvironment(
+                runner=build_discovery_runner(no_cache=False),
+            ).cpu_vendor()
         except OSError:
             vendor = None
         if cfg.microcode.kind == "auto" and vendor is None:
@@ -70,11 +75,12 @@ def _resolve_environment(
                 "microcode.kind explicitly to silence this.[/yellow]",
             )
         return None, vendor
+    discovery_runner = build_discovery_runner(no_cache=False)
     real = RealRunner()
     report = preflight_environment(
         cfg,
-        LsblkBlockDevices(runner=real),
-        IsoEnvironment(runner=real),
+        LsblkBlockDevices(runner=discovery_runner),
+        IsoEnvironment(runner=discovery_runner),
         EfivarsFirmware(),
         Pacman(runner=real),
         OsIdentity(),
