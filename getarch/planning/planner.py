@@ -43,6 +43,7 @@ from getarch.planning.strategies.network import (
 from getarch.planning.strategies.nftables import NftablesStrategy
 from getarch.planning.strategies.partitioning import SgdiskStrategy
 from getarch.planning.strategies.partitioning_bios import SgdiskBiosStrategy
+from getarch.planning.strategies.partitioning_custom import SgdiskCustomStrategy
 from getarch.planning.strategies.repositories import (
     RepositoriesStrategy,
     RepositoryEntry,
@@ -121,7 +122,12 @@ class Planner:
         if cfg.partitioning.lvm is not None:
             steps.append(self._lvm_create_step(cfg))
         root_partition = self._root_device(cfg, encrypted=encrypted)
-        efi_partition = None if cfg.firmware == "bios" else "/dev/disk/by-partlabel/EFI"
+        efi_label = self._label_for_role(cfg, "efi", "EFI")
+        efi_partition = (
+            None
+            if cfg.firmware == "bios"
+            else f"/dev/disk/by-partlabel/{efi_label}"
+        )
         if cfg.partitioning.lvm is not None:
             steps.extend(self._lvm_filesystem_steps(cfg, efi_partition, mount_root))
         else:
@@ -141,11 +147,14 @@ class Planner:
                 v for v in cfg.partitioning.lvm.volumes if v.mountpoint == "/"
             )
             return f"/dev/{cfg.partitioning.lvm.vg_name}/{root_lv.name}"
-        return (
-            f"/dev/mapper/{cfg.encryption.mapper_name}"
-            if encrypted
-            else "/dev/disk/by-partlabel/system"
-        )
+        if encrypted:
+            return f"/dev/mapper/{cfg.encryption.mapper_name}"
+        # Custom layouts respect the user's chosen label; the default is the
+        # historical "system"/"cryptsystem" pair. When encrypted, the LUKS
+        # mapper hides the underlying partition label so we don't need it
+        # here.
+        root_label = self._label_for_role(cfg, "root", "system")
+        return f"/dev/disk/by-partlabel/{root_label}"
 
     def _extend_system_phase(
         self,
@@ -204,6 +213,23 @@ class Planner:
             steps.append(self._reboot_step())
 
     def _partitioning_step(self, cfg: Config, disk: Disk, *, encrypted: bool) -> PlannedStep:
+        if cfg.partitioning.custom is not None:
+            commands = SgdiskCustomStrategy(
+                disk=disk,
+                partitions=tuple(cfg.partitioning.custom),
+            ).commands()
+            label_summary = ",".join(p.label for p in cfg.partitioning.custom)
+            return PlannedStep(
+                id="partitioning",
+                title="Partition disk (custom layout)",
+                phase=StepPhase.PARTITIONING,
+                commands=commands,
+                destructive=True,
+                description=(
+                    f"Create custom GPT layout [{label_summary}] "
+                    f"({cfg.firmware}) on {disk.path.as_posix()}"
+                ),
+            )
         if cfg.firmware == "bios":
             commands = SgdiskBiosStrategy(
                 disk=disk, layout=cfg.partitioning, encrypted=encrypted
@@ -224,12 +250,27 @@ class Planner:
             ),
         )
 
+    def _label_for_role(self, cfg: Config, role: str, default: str) -> str:
+        if cfg.partitioning.custom is None:
+            return default
+        for p in cfg.partitioning.custom:
+            if p.role == role:
+                return p.label
+        return default
+
+    def _has_role(self, cfg: Config, role: str) -> bool:
+        """Whether the resolved layout includes ``role`` (custom or builtin)."""
+        if cfg.partitioning.custom is not None:
+            return any(p.role == role for p in cfg.partitioning.custom)
+        return role in cfg.partitioning.layout
+
     def _encryption_home_step(self, cfg: Config) -> PlannedStep:
         if cfg.encryption.home_kind == "separate-key":
             password = cfg.encryption.home_password or ""
         else:
             password = cfg.encryption.password or ""
-        partition = "/dev/disk/by-partlabel/home"
+        home_label = self._label_for_role(cfg, "home", "home")
+        partition = f"/dev/disk/by-partlabel/{home_label}"
         return PlannedStep(
             id="encryption-home",
             title="Set up LUKS2 /home",
@@ -275,7 +316,8 @@ class Planner:
             unlock_password = cfg.encryption.password or ""
         target_dir = mount_root / "etc/cryptkey"
         target_key = target_dir / "home.key"
-        partition = "/dev/disk/by-partlabel/home"
+        home_label = self._label_for_role(cfg, "home", "home")
+        partition = f"/dev/disk/by-partlabel/{home_label}"
         # Heredoc fed via bash -c. The unlock password is piped to
         # cryptsetup luksAddKey via a subshell so it never appears in
         # argv or the shell history.
@@ -329,14 +371,15 @@ class Planner:
         efi_partition: str | None,
         mount_root: Path,
     ) -> tuple[PlannedStep, PlannedStep]:
-        has_home = "home" in cfg.partitioning.layout
+        has_home = self._has_role(cfg, "home")
         fs_spec = self._fs_spec(cfg, drop_home_subvolume=has_home)
         if has_home:
+            home_label = self._label_for_role(cfg, "home", "home")
             home_partition: str | None = (
                 "/dev/mapper/homecrypt"
                 if cfg.encryption.kind == "luks2"
                 and cfg.encryption.home_kind != "none"
-                else "/dev/disk/by-partlabel/home"
+                else f"/dev/disk/by-partlabel/{home_label}"
             )
         else:
             home_partition = None
@@ -519,10 +562,11 @@ class Planner:
         wants_home = (
             cfg.encryption.kind == "luks2"
             and cfg.encryption.home_kind != "none"
-            and "home" in cfg.partitioning.layout
+            and self._has_role(cfg, "home")
         )
         if wants_home:
-            home_partition = "/dev/disk/by-partlabel/home"
+            home_label = self._label_for_role(cfg, "home", "home")
+            home_partition = f"/dev/disk/by-partlabel/{home_label}"
             key_source = (
                 "/etc/cryptkey/home.key"
                 if cfg.encryption.home_keyfile
@@ -538,11 +582,12 @@ class Planner:
                 f'>> {crypttab_path}',
             )
         if cfg.swap.kind == "partition" and cfg.swap.encrypt:
+            swap_label = self._label_for_role(cfg, "swap", "swap")
             # Static line — random key on every boot, no UUID needed
             # because the systemd-cryptsetup generator opens the device
             # by partlabel directly.
             lines.append(
-                f'echo "swapcrypt /dev/disk/by-partlabel/swap '
+                f'echo "swapcrypt /dev/disk/by-partlabel/{swap_label} '
                 f'/dev/urandom swap,plain,'
                 f'cipher=aes-xts-plain64,size=256" >> {crypttab_path}',
             )
@@ -655,7 +700,9 @@ class Planner:
                 microcode=microcode,
                 encryption=encryption_spec,
                 rootflags=rootflags,
-                crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
+                crypt_partition_path=(
+                    f"/dev/disk/by-partlabel/{self._label_for_role(cfg, 'root', 'cryptsystem')}"
+                ),
                 mount_root=mount_root,
                 install_disk=disk.path.as_posix(),
             ).commands()
@@ -666,7 +713,9 @@ class Planner:
                 microcode=microcode,
                 encryption=encryption_spec,
                 rootflags=rootflags,
-                crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
+                crypt_partition_path=(
+                    f"/dev/disk/by-partlabel/{self._label_for_role(cfg, 'root', 'cryptsystem')}"
+                ),
                 mount_root=mount_root,
             ).commands()
         return PlannedStep(
@@ -919,7 +968,8 @@ class Planner:
                 description="write zram-generator.conf for /dev/zram0",
             )
         if cfg.swap.kind == "partition":
-            partition = "/dev/disk/by-partlabel/swap"
+            swap_label = self._label_for_role(cfg, "swap", "swap")
+            partition = f"/dev/disk/by-partlabel/{swap_label}"
             cmds: list[Command] = []
             if cfg.swap.encrypt:
                 # Plain dm-crypt with a fresh random key on every boot.

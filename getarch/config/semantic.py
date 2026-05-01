@@ -49,8 +49,15 @@ def _check_encryption_initramfs(cfg: Config) -> None:
         )
 
 
+def _has_role(cfg: Config, role: str) -> bool:
+    """Whether the resolved layout (custom or builtin) provides ``role``."""
+    if cfg.partitioning.custom is not None:
+        return any(p.role == role for p in cfg.partitioning.custom)
+    return role in cfg.partitioning.layout
+
+
 def _check_swap_layout(cfg: Config) -> None:
-    if cfg.swap.kind == "partition" and "swap" not in cfg.partitioning.layout:
+    if cfg.swap.kind == "partition" and not _has_role(cfg, "swap"):
         raise SemanticConfigError(
             f"swap.kind=partition requires a partition layout that includes swap; "
             f"got {cfg.partitioning.layout!r}",
@@ -76,6 +83,9 @@ def _check_mirrors(cfg: Config) -> None:
 
 
 def _check_home_layout(cfg: Config) -> None:
+    # Custom layouts are responsible for their own home sizing.
+    if cfg.partitioning.custom is not None:
+        return
     if "home" not in cfg.partitioning.layout:
         return
     if (
@@ -100,7 +110,7 @@ def _check_home_layout(cfg: Config) -> None:
 def _check_luks_home_incompatible(cfg: Config) -> None:
     if (
         cfg.encryption.kind == "luks2"
-        and "home" in cfg.partitioning.layout
+        and _has_role(cfg, "home")
         and cfg.encryption.home_kind == "none"
     ):
         raise SemanticConfigError(
@@ -118,8 +128,16 @@ _RESERVED_PARTLABELS = frozenset({"EFI", "system", "cryptsystem", "swap", "home"
 def _check_mountpoints(cfg: Config) -> None:
     seen_labels: set[str] = set()
     seen_mounts: set[str] = set()
+    if cfg.partitioning.custom is not None:
+        # Custom layouts replace the builtin reserved labels with the
+        # user's chosen labels for non-extra roles.
+        reserved = frozenset(
+            p.label for p in cfg.partitioning.custom if p.role != "extra"
+        )
+    else:
+        reserved = _RESERVED_PARTLABELS
     for mp in cfg.mountpoints:
-        if mp.partition_label in _RESERVED_PARTLABELS:
+        if mp.partition_label in reserved:
             raise SemanticConfigError(
                 f"mountpoint partition_label {mp.partition_label!r} collides "
                 f"with reserved planner label",
@@ -190,7 +208,7 @@ def _check_lvm_layout(cfg: Config) -> None:
 
 
 def _check_detached_header(cfg: Config) -> None:
-    layout_has_carrier = "luksheader" in cfg.partitioning.layout
+    layout_has_carrier = _has_role(cfg, "luksheader")
     if cfg.encryption.header_path is None:
         if layout_has_carrier:
             raise SemanticConfigError(

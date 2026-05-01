@@ -60,6 +60,28 @@ class LvmConfig(_Frozen):
         return self
 
 
+class CustomPartition(_Frozen):
+    """Single GPT partition in :attr:`PartitionLayout.custom`.
+
+    ``label`` becomes the GPT partition name (also the
+    ``/dev/disk/by-partlabel/<label>`` symlink). ``typecode`` is the
+    sgdisk short type GUID. ``role`` tells the planner what semantic
+    slot this partition fills:
+
+    * ``efi`` — ESP, mounted at ``/boot``
+    * ``root`` — root filesystem (LUKS container if encryption is on)
+    * ``home`` — separate home partition
+    * ``swap`` — swap partition
+    * ``luksheader`` — detached LUKS header carrier
+    * ``extra`` — user-mounted via :attr:`Config.mountpoints`
+    """
+
+    label: str = Field(pattern=r"^[a-zA-Z0-9_.-]+$")
+    size_mib: int | None = Field(default=None, ge=1)
+    typecode: str = Field(default="8300", pattern=r"^[0-9a-fA-F]{4}$")
+    role: Literal["root", "home", "efi", "swap", "luksheader", "extra"] = "extra"
+
+
 class PartitionLayout(_Frozen):
     layout: Literal[
         "efi-root",
@@ -74,6 +96,7 @@ class PartitionLayout(_Frozen):
     home_size_mib: int | None = Field(default=None, ge=1024)
     root_size_mib: int | None = Field(default=None, ge=4096)
     lvm: LvmConfig | None = None
+    custom: list[CustomPartition] | None = None
 
     @model_validator(mode="after")
     def _validate_lvm(self) -> PartitionLayout:
@@ -81,6 +104,37 @@ class PartitionLayout(_Frozen):
             raise ValueError(
                 "partitioning.lvm conflicts with a 'home' partition role; "
                 "declare a home LV in lvm.volumes instead",
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_custom(self) -> PartitionLayout:
+        if self.custom is None:
+            return self
+        if self.lvm is not None:
+            raise ValueError(
+                "partitioning.custom is mutually exclusive with partitioning.lvm",
+            )
+        labels = [p.label for p in self.custom]
+        if len(labels) != len(set(labels)):
+            raise ValueError("partitioning.custom partitions have duplicate labels")
+        roles = [p.role for p in self.custom if p.role != "extra"]
+        for required in ("efi", "root"):
+            if required not in roles:
+                raise ValueError(
+                    f"partitioning.custom must include exactly one role={required!r}",
+                )
+        for role in roles:
+            if roles.count(role) > 1:
+                raise ValueError(
+                    f"partitioning.custom has {roles.count(role)} partitions with "
+                    f"role={role!r}; only 'extra' may repeat",
+                )
+        unsized = [p for p in self.custom if p.size_mib is None]
+        if len(unsized) > 1:
+            raise ValueError(
+                "partitioning.custom may have at most one partition with no "
+                "size_mib (it consumes the rest of the disk)",
             )
         return self
 
