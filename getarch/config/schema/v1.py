@@ -199,6 +199,16 @@ class UsersConfig(_Frozen):
     regular: list[RegularUserConfig] = Field(default_factory=list)
 
 
+class RepositoryConfig(_Frozen):
+    name: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
+    include: str = "/etc/pacman.d/mirrorlist"
+
+
+class RepositoriesConfig(_Frozen):
+    multilib: bool = False
+    extra: list[RepositoryConfig] = Field(default_factory=list)
+
+
 class MountpointConfig(_Frozen):
     """Mount an *existing* partition by partlabel under the new system.
 
@@ -234,6 +244,7 @@ class Config(_Frozen):
     mirrors: MirrorsConfig
     users: UsersConfig
     mountpoints: list[MountpointConfig] = Field(default_factory=list)
+    repositories: RepositoriesConfig = Field(default_factory=RepositoriesConfig)
     reboot: bool = False
 
     @field_validator("packages")

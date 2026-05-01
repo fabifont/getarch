@@ -35,6 +35,10 @@ from getarch.planning.strategies.network import (
     NetworkdProfilePlan,
 )
 from getarch.planning.strategies.partitioning import SgdiskStrategy
+from getarch.planning.strategies.repositories import (
+    RepositoriesStrategy,
+    RepositoryEntry,
+)
 from getarch.planning.strategies.swap import SwapfileStrategy, ZramStrategy
 
 _PLAN_VERSION = "1"
@@ -60,6 +64,10 @@ class Planner:
         mirror_step = self._mirror_step(cfg, mount_root)
         if mirror_step is not None:
             steps.append(mirror_step)
+
+        repos_step = self._repositories_step(cfg)
+        if repos_step is not None:
+            steps.append(repos_step)
 
         steps.append(self._partitioning_step(cfg, disk, encrypted=encrypted))
         if encrypted:
@@ -494,6 +502,30 @@ class Planner:
                 description="write zram-generator.conf for /dev/zram0",
             )
         return None
+
+    def _repositories_step(self, cfg: Config) -> PlannedStep | None:
+        repos = cfg.repositories
+        extras = tuple(
+            RepositoryEntry(name=r.name, include=r.include) for r in repos.extra
+        )
+        if not repos.multilib and not extras:
+            return None
+        cmds = RepositoriesStrategy(
+            multilib=repos.multilib,
+            extras=extras,
+        ).commands()
+        if not cmds:
+            return None
+        return PlannedStep(
+            id="repositories",
+            title="Configure pacman repositories",
+            phase=StepPhase.MIRRORS,
+            commands=cmds,
+            destructive=False,
+            description=(
+                f"multilib={repos.multilib}, extras={[e.name for e in extras]}"
+            ),
+        )
 
     def _mirror_step(self, cfg: Config, mount_root: Path) -> PlannedStep | None:
         strategy = build_mirror_strategy(cfg.mirrors, mount_root)
