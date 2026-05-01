@@ -24,6 +24,9 @@ from getarch.cli.commands import (
     microcode as microcode_cmd,
 )
 from getarch.cli.commands import (
+    migrate as migrate_cmd,
+)
+from getarch.cli.commands import (
     plan as plan_cmd,
 )
 from getarch.cli.commands import (
@@ -90,6 +93,7 @@ app.command("tui")(tui_cmd.run)
 app.command("verify")(verify_cmd.run)
 app.command("microcode")(microcode_cmd.run)
 app.command("version")(version_cmd.run)
+app.command("migrate")(migrate_cmd.run)
 
 
 help_app = typer.Typer(

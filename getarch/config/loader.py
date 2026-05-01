@@ -11,15 +11,25 @@ import yaml
 from pydantic import ValidationError
 
 from getarch.config.schema.v1 import Config as ConfigV1
+from getarch.config.schema.v2 import Config as ConfigV2
 from getarch.errors import SyntacticConfigError
 
 _YAML_SUFFIXES = frozenset({".yaml", ".yml"})
 _TOML_SUFFIXES = frozenset({".toml"})
 _JSON_SUFFIXES = frozenset({".json"})
 
+_SUPPORTED_VERSIONS = (1, 2)
+_VERSION_V2 = 2
+
 
 def load_config(path: Path) -> ConfigV1:
-    """Load and validate a config file at ``path``."""
+    """Load and validate a config file at ``path``.
+
+    Both v1 and v2 are accepted; the returned object is always a
+    :class:`ConfigV1` since v2 currently only differs by the version
+    literal (it inherits every field from v1). Downstream code can
+    therefore stay unchanged across the bump.
+    """
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
@@ -33,14 +43,22 @@ def load_config(path: Path) -> ConfigV1:
 
     payload: dict[str, Any] = raw  # type: ignore[assignment]
     version = payload.get("version")
-    if version != 1:
+    if version not in _SUPPORTED_VERSIONS:
         raise SyntacticConfigError(
-            f"unsupported config version {version!r}; supported: 1",
+            f"unsupported config version {version!r}; "
+            f"supported: {', '.join(str(v) for v in _SUPPORTED_VERSIONS)}",
         )
     try:
+        if version == _VERSION_V2:
+            return ConfigV2.model_validate(payload)
         return ConfigV1.model_validate(payload)
     except ValidationError as exc:
         raise SyntacticConfigError(str(exc)) from exc
+
+
+def parse_text(path: Path, text: str) -> object:
+    """Parse a config payload by file extension. Public for `migrate`."""
+    return _parse(path, text)
 
 
 def _parse(path: Path, text: str) -> object:
