@@ -162,8 +162,6 @@ def _execute_pipeline(
                 target_disk_path=cfg.disk.path,
             ),
         )
-    if not dry_run and cfg.disk.wipe_before:
-        steps.append(DiskWipeStep(target_disk_path=cfg.disk.path))
     if not dry_run and cfg.network.bootstrap is not None:
         bootstrap = cfg.network.bootstrap
         steps.append(
@@ -180,7 +178,20 @@ def _execute_pipeline(
     audit_step: object | None = (
         AuditLogStep(audit_runner=audit_runner, log_path=log_path) if not dry_run else None
     )
+    wipe_step: object | None = (
+        DiskWipeStep(target_disk_path=cfg.disk.path)
+        if not dry_run and cfg.disk.wipe_before
+        else None
+    )
     for planned in plan.steps:
+        # The wipe runs immediately before the partitioning step so all
+        # non-destructive prerequisites (network bootstrap, runtime
+        # preflight, mirrors, repositories) have already succeeded — a
+        # late mirror failure can no longer leave the user with a wiped
+        # disk and no install.
+        if wipe_step is not None and planned.id == "partitioning":
+            steps.append(wipe_step)
+            wipe_step = None
         if audit_step is not None and planned.id == "cleanup":
             steps.append(audit_step)
             audit_step = None  # never insert twice
@@ -188,6 +199,10 @@ def _execute_pipeline(
     if audit_step is not None:
         # No cleanup step in this plan (unusual): still flush the audit log.
         steps.append(audit_step)
+    if wipe_step is not None:
+        # No partitioning step in plan: drop wipe rather than wiping the
+        # disk after the rest of the install completes.
+        wipe_step = None
     state_path = None if dry_run else default_state_path(mount_root)
     Pipeline(
         steps=tuple(steps),  # type: ignore[arg-type]

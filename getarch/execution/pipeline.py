@@ -54,6 +54,8 @@ class Pipeline:
                 if sid not in _NON_RESUMABLE_STEP_IDS
             ],
             last_error=self.initial_state.last_error,
+            plan_fingerprint=self.initial_state.plan_fingerprint,
+            plan_blob=self.initial_state.plan_blob,
         )
         results: list[StepResult] = []
         for step in self.steps:

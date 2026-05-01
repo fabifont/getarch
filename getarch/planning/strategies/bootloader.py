@@ -86,7 +86,16 @@ class SystemdBootStrategy:
         params: list[str] = []
         if self.encryption.kind is EncryptionKind.LUKS2:
             params.append(f"rd.luks.name=${{LUKS_UUID}}={self.encryption.mapper_name}")
-            params.append("rd.luks.options=discard")
+            # Combine all rd.luks.options into a single comma-separated
+            # value: sd-encrypt parses one occurrence per kernel cmdline.
+            luks_options: list[str] = ["discard"]
+            if self.encryption.header_path:
+                luks_options.append(f"header={self.encryption.header_path}")
+            if self.encryption.tpm2_unlock:
+                luks_options.append("tpm2-device=auto")
+            if self.encryption.fido2_unlock:
+                luks_options.append("fido2-device=auto")
+            params.append(f"rd.luks.options={','.join(luks_options)}")
             params.append(f"root=/dev/mapper/{self.encryption.mapper_name}")
         else:
             params.append("root=LABEL=system")
@@ -176,16 +185,27 @@ class GrubStrategy:
     def _cmdline(self) -> str:
         params: list[str] = []
         if self.encryption.kind is EncryptionKind.LUKS2:
-            params.append(
-                f"cryptdevice={self.crypt_partition_path}:{self.encryption.mapper_name}",
+            # mkinitcpio's busybox `encrypt` hook accepts an inline
+            # header= via the cryptdevice= argument; the systemd
+            # `sd-encrypt` hook reads `rd.luks.options=header=`. Emit
+            # both so either initramfs flavour boots.
+            cryptdevice = (
+                f"cryptdevice={self.crypt_partition_path}:"
+                f"{self.encryption.mapper_name}"
             )
-            params.append(f"root=/dev/mapper/{self.encryption.mapper_name}")
             if self.encryption.header_path:
-                params.append(f"cryptheader={self.encryption.header_path}")
+                cryptdevice = f"{cryptdevice}:header={self.encryption.header_path}"
+            params.append(cryptdevice)
+            params.append(f"root=/dev/mapper/{self.encryption.mapper_name}")
+            luks_options: list[str] = []
+            if self.encryption.header_path:
+                luks_options.append(f"header={self.encryption.header_path}")
             if self.encryption.tpm2_unlock:
-                params.append("rd.luks.options=tpm2-device=auto")
+                luks_options.append("tpm2-device=auto")
             if self.encryption.fido2_unlock:
-                params.append("rd.luks.options=fido2-device=auto")
+                luks_options.append("fido2-device=auto")
+            if luks_options:
+                params.append(f"rd.luks.options={','.join(luks_options)}")
         else:
             params.append("root=LABEL=system")
         if self.rootflags:
@@ -302,10 +322,15 @@ class UkiStrategy:
             f"rd.luks.name=${{LUKS_UUID}}={self.encryption.mapper_name}",
             f"root=/dev/mapper/{self.encryption.mapper_name}",
         ]
+        luks_options: list[str] = []
+        if self.encryption.header_path:
+            luks_options.append(f"header={self.encryption.header_path}")
         if self.encryption.tpm2_unlock:
-            params.append("rd.luks.options=tpm2-device=auto")
+            luks_options.append("tpm2-device=auto")
         if self.encryption.fido2_unlock:
-            params.append("rd.luks.options=fido2-device=auto")
+            luks_options.append("fido2-device=auto")
+        if luks_options:
+            params.append(f"rd.luks.options={','.join(luks_options)}")
         if self.rootflags:
             params.append(self.rootflags)
         params.append("rw")
@@ -383,10 +408,19 @@ class GrubBiosStrategy:
     def _cmdline(self) -> str:
         params: list[str] = []
         if self.encryption.kind is EncryptionKind.LUKS2:
-            params.append(
-                f"cryptdevice={self.crypt_partition_path}:{self.encryption.mapper_name}",
+            cryptdevice = (
+                f"cryptdevice={self.crypt_partition_path}:"
+                f"{self.encryption.mapper_name}"
             )
+            if self.encryption.header_path:
+                cryptdevice = f"{cryptdevice}:header={self.encryption.header_path}"
+            params.append(cryptdevice)
             params.append(f"root=/dev/mapper/{self.encryption.mapper_name}")
+            luks_options: list[str] = []
+            if self.encryption.header_path:
+                luks_options.append(f"header={self.encryption.header_path}")
+            if luks_options:
+                params.append(f"rd.luks.options={','.join(luks_options)}")
         else:
             params.append("root=LABEL=system")
         if self.rootflags:

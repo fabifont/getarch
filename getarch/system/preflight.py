@@ -210,7 +210,15 @@ def _first_mirror_base_url(static_path: Path) -> str | None:
 def _assert_encryption(cfg: Config) -> None:
     if not cfg.encryption.header_path:
         return
-    if not Path(cfg.encryption.header_path).is_file():
+    header = Path(cfg.encryption.header_path)
+    # `/dev/...` paths point at block devices (e.g. the cryptheader
+    # carrier partition) that don't exist yet before the partitioning
+    # step runs and never satisfy `is_file()` even when present. Accept
+    # the path without checking on disk; runtime cryptsetup invocation
+    # will fail loudly if the device is missing.
+    if header.as_posix().startswith("/dev/"):
+        return
+    if not header.is_file():
         raise _EnvErr(
             f"detached LUKS header not found: {cfg.encryption.header_path}",
         )

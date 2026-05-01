@@ -62,6 +62,21 @@ def test_pipeline_records_failure_and_reraises(tmp_path: Path) -> None:
     assert "b" in state.last_error
 
 
+def test_pipeline_persists_plan_fingerprint_and_blob(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    initial = PipelineState(plan_fingerprint="abc123", plan_blob='{"v":"1"}')
+    pipeline = Pipeline(
+        steps=(_RecordingStep("a"),),
+        state_path=state_path,
+        initial_state=initial,
+    )
+    pipeline.run(_ctx())
+    state = PipelineState.read(state_path)
+    assert state.plan_fingerprint == "abc123"
+    assert state.plan_blob == '{"v":"1"}'
+    assert state.completed == ["a"]
+
+
 def test_pipeline_never_marks_runtime_guards_completed(tmp_path: Path) -> None:
     state_path = tmp_path / "state.json"
     pipeline = Pipeline(

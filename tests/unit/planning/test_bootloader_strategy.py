@@ -162,3 +162,62 @@ def test_factory_dispatches_on_kind() -> None:
     assert isinstance(_build(BootloaderKind.SYSTEMD_BOOT), SystemdBootStrategy)
     assert isinstance(_build(BootloaderKind.GRUB), GrubStrategy)
     assert isinstance(_build(BootloaderKind.UKI), UkiStrategy)
+
+
+def test_systemd_boot_with_detached_header_emits_header_in_options() -> None:
+    cmds = SystemdBootStrategy(
+        spec=BootloaderSpec(),
+        kernel=KernelSpec(),
+        microcode=MicrocodeKind.NONE,
+        encryption=EncryptionSpec(
+            kind=EncryptionKind.LUKS2,
+            password=Secret("x"),
+            header_path="/dev/disk/by-partlabel/cryptheader",
+        ),
+        rootflags=None,
+        crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
+        mount_root=Path("/mnt"),
+    ).commands()
+    bash = next(c for c in cmds if c.argv[0] == "bash")
+    script = bash.argv[2]
+    assert "header=/dev/disk/by-partlabel/cryptheader" in script
+    assert "rd.luks.options=" in script
+
+
+def test_grub_with_detached_header_includes_header_in_cryptdevice() -> None:
+    cmds = GrubStrategy(
+        spec=BootloaderSpec(kind=BootloaderKind.GRUB),
+        kernel=KernelSpec(),
+        microcode=MicrocodeKind.NONE,
+        encryption=EncryptionSpec(
+            kind=EncryptionKind.LUKS2,
+            password=Secret("x"),
+            header_path="/dev/disk/by-partlabel/cryptheader",
+        ),
+        rootflags=None,
+        crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
+        mount_root=Path("/mnt"),
+    ).commands()
+    flat = " ".join(arg for c in cmds for arg in c.argv) + " ".join(
+        c.input or "" for c in cmds
+    )
+    assert "header=/dev/disk/by-partlabel/cryptheader" in flat
+
+
+def test_uki_with_detached_header_emits_header_in_options() -> None:
+    cmds = UkiStrategy(
+        spec=BootloaderSpec(kind=BootloaderKind.UKI),
+        kernel=KernelSpec(),
+        microcode=MicrocodeKind.NONE,
+        encryption=EncryptionSpec(
+            kind=EncryptionKind.LUKS2,
+            password=Secret("x"),
+            header_path="/dev/disk/by-partlabel/cryptheader",
+        ),
+        rootflags=None,
+        crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
+        mount_root=Path("/mnt"),
+    ).commands()
+    bash = next(c for c in cmds if c.argv[0] == "bash")
+    script = bash.argv[2]
+    assert "header=/dev/disk/by-partlabel/cryptheader" in script
