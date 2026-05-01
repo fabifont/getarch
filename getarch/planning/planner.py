@@ -123,10 +123,11 @@ class Planner:
         self, cfg: Config, mount_root: Path,
     ) -> PlannedStep:
         # Inside a container we can't pacstrap (no /proc, no fresh
-        # bootstrap). Use the existing pacman that the container image
-        # ships with: arch-chroot wraps pacman -S, so the planner just
-        # records the package list.
-        del mount_root  # unused in container mode (chroot handles it)
+        # bootstrap). Run pacman *inside* the chroot via arch-chroot
+        # (Command.chroot=True). Without chroot=True, pacman would
+        # install packages on the host environment instead of the
+        # container's mount_root.
+        del mount_root  # the runner injects mount_root via chroot=True
         pkgs = list(cfg.packages)
         if cfg.network.backend == "networkmanager" and "networkmanager" not in pkgs:
             pkgs.append("networkmanager")
@@ -141,13 +142,14 @@ class Planner:
             commands=(
                 Command(
                     argv=("pacman", "-Sy", "--needed", "--noconfirm", *pkgs),
+                    chroot=True,
                     description=(
-                        f"pacman -Sy --needed {len(pkgs)} packages in container"
+                        f"pacman -Sy --needed {len(pkgs)} packages in container chroot"
                     ),
                 ),
             ),
             destructive=False,
-            description="install base packages with pacman -Sy --needed",
+            description="install base packages with pacman -Sy --needed (chroot)",
         )
 
     # --- build helpers ---------------------------------------------------
@@ -183,7 +185,7 @@ class Planner:
         if (
             encrypted
             and cfg.encryption.home_kind != "none"
-            and "home" in cfg.partitioning.layout
+            and self._has_role(cfg, "home")
         ):
             steps.append(self._encryption_home_step(cfg))
         if cfg.partitioning.lvm is not None:
@@ -238,7 +240,7 @@ class Planner:
             cfg.encryption.kind == "luks2"
             and cfg.encryption.home_kind != "none"
             and cfg.encryption.home_keyfile
-            and "home" in cfg.partitioning.layout
+            and self._has_role(cfg, "home")
         ):
             steps.append(self._encryption_home_keyfile_step(cfg, mount_root))
         steps.append(self._fstab_step(mount_root))
@@ -613,6 +615,11 @@ class Planner:
             pkgs.append("snapper")
         if cfg.network.firewall_nftables_rules and "nftables" not in pkgs:
             pkgs.append("nftables")
+        if cfg.partitioning.lvm is not None and "lvm2" not in pkgs:
+            # mkinitcpio's lvm2 hook + the runtime activate-vg both need
+            # the lvm2 userspace tools. Auto-add so the install doesn't
+            # silently produce an unbootable system when the user forgets.
+            pkgs.append("lvm2")
         return PlannedStep(
             id="packages",
             title="Pacstrap base packages",
@@ -764,6 +771,15 @@ class Planner:
             fido2_unlock=cfg.encryption.fido2_unlock,
             header_path=cfg.encryption.header_path,
         )
+        crypt_label = self._label_for_role(cfg, "root", "cryptsystem")
+        crypt_partition_path = f"/dev/disk/by-partlabel/{crypt_label}"
+        # Resolved root device wins over the LUKS mapper when LVM is in
+        # play (root LV path) or when the user picked a custom partition
+        # label for the unencrypted root.
+        root_device = self._root_device(cfg, encrypted=encrypted)
+        # Plain (non-encrypted) root cmdline uses LABEL=<label>; pick the
+        # custom label if set, else the historical "system".
+        root_label = self._label_for_role(cfg, "root", "system")
         if cfg.firmware == "bios":
             strategy_cmds = GrubBiosStrategy(
                 spec=bl_spec,
@@ -771,11 +787,11 @@ class Planner:
                 microcode=microcode,
                 encryption=encryption_spec,
                 rootflags=rootflags,
-                crypt_partition_path=(
-                    f"/dev/disk/by-partlabel/{self._label_for_role(cfg, 'root', 'cryptsystem')}"
-                ),
+                crypt_partition_path=crypt_partition_path,
                 mount_root=mount_root,
                 install_disk=disk.path.as_posix(),
+                root_device=root_device,
+                root_label=root_label,
             ).commands()
         else:
             strategy_cmds = build_bootloader_strategy(
@@ -784,10 +800,10 @@ class Planner:
                 microcode=microcode,
                 encryption=encryption_spec,
                 rootflags=rootflags,
-                crypt_partition_path=(
-                    f"/dev/disk/by-partlabel/{self._label_for_role(cfg, 'root', 'cryptsystem')}"
-                ),
+                crypt_partition_path=crypt_partition_path,
                 mount_root=mount_root,
+                root_device=root_device,
+                root_label=root_label,
             ).commands()
         return PlannedStep(
             id="bootloader",

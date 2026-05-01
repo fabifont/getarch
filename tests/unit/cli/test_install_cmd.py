@@ -106,7 +106,7 @@ def test_skip_environment_preflight_does_not_bypass_disk_busy_guard(
             return ()
 
     mocker.patch(
-        "getarch.cli.commands.install.LsblkBlockDevices",
+        "getarch.installers.pipeline_builder.LsblkBlockDevices",
         return_value=_Busy(),
     )
     p = _write(tmp_path)

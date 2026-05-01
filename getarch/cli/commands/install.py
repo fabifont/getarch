@@ -26,15 +26,8 @@ from getarch.execution.state import (
     default_state_path,
     fingerprint_plan_text,
 )
-from getarch.installers.base import PlannedStepExecutor
 from getarch.installers.confirmation import require_destructive_confirmation
-from getarch.installers.preflight import (
-    AuditLogStep,
-    DiskBusyGuardStep,
-    DiskWipeStep,
-    RuntimeNetworkBootstrapStep,
-    RuntimePreflightStep,
-)
+from getarch.installers.pipeline_builder import build_install_pipeline_steps
 from getarch.planning.planner import Planner
 from getarch.planning.rendering import render_json, render_text
 from getarch.system.block_devices import LsblkBlockDevices
@@ -154,69 +147,14 @@ def _execute_pipeline(
         assume_yes=assume_yes,
         force=force,
     )
-    container_mode = cfg.firmware == "container"
-    steps: list[object] = []
-    # Disk-busy guard is meaningless in a chroot/container — there's no
-    # target disk to refuse. Same for network bootstrap (the container
-    # caller is responsible for providing connectivity).
-    if not dry_run and not container_mode:
-        steps.append(
-            DiskBusyGuardStep(
-                block_devices=LsblkBlockDevices(runner=RealRunner()),
-                target_disk_path=cfg.disk.path,
-            ),
-        )
-    if not dry_run and not container_mode and cfg.network.bootstrap is not None:
-        bootstrap = cfg.network.bootstrap
-        steps.append(
-            RuntimeNetworkBootstrapStep(
-                backend=bootstrap.kind,
-                device=bootstrap.device,
-                ssid=getattr(bootstrap, "ssid", None),
-                psk=getattr(bootstrap, "psk", None),
-                username=getattr(bootstrap, "username", None),
-                password=getattr(bootstrap, "password", None),
-                cert_path=getattr(bootstrap, "cert_path", None),
-                private_key_path=getattr(bootstrap, "private_key_path", None),
-                ca_cert_path=getattr(bootstrap, "ca_cert_path", None),
-                eap_method=getattr(bootstrap, "eap_method", "PEAP"),
-                config_path=getattr(bootstrap, "config_path", None),
-            ),
-        )
-    if not skip_runtime_preflight and not dry_run and not container_mode:
-        # The runtime preflight (timedatectl set-ntp, pacman-key init,
-        # archlinux-keyring refresh) only makes sense on the live ISO;
-        # the container caller is expected to ship a populated keyring.
-        steps.append(RuntimePreflightStep())
-    log_path = mount_root / "var/log/getarch.log"
-    audit_step: object | None = (
-        AuditLogStep(audit_runner=audit_runner, log_path=log_path) if not dry_run else None
+    steps = build_install_pipeline_steps(
+        plan,
+        cfg=cfg,
+        audit_runner=audit_runner,
+        mount_root=mount_root,
+        dry_run=dry_run,
+        skip_runtime_preflight=skip_runtime_preflight,
     )
-    wipe_step: object | None = (
-        DiskWipeStep(target_disk_path=cfg.disk.path)
-        if not dry_run and cfg.disk.wipe_before
-        else None
-    )
-    for planned in plan.steps:
-        # The wipe runs immediately before the partitioning step so all
-        # non-destructive prerequisites (network bootstrap, runtime
-        # preflight, mirrors, repositories) have already succeeded — a
-        # late mirror failure can no longer leave the user with a wiped
-        # disk and no install.
-        if wipe_step is not None and planned.id == "partitioning":
-            steps.append(wipe_step)
-            wipe_step = None
-        if audit_step is not None and planned.id == "cleanup":
-            steps.append(audit_step)
-            audit_step = None  # never insert twice
-        steps.append(PlannedStepExecutor(planned=planned))
-    if audit_step is not None:
-        # No cleanup step in this plan (unusual): still flush the audit log.
-        steps.append(audit_step)
-    if wipe_step is not None:
-        # No partitioning step in plan: drop wipe rather than wiping the
-        # disk after the rest of the install completes.
-        wipe_step = None
     state_path = None if dry_run else default_state_path(mount_root)
     Pipeline(
         steps=tuple(steps),  # type: ignore[arg-type]

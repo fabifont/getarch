@@ -35,6 +35,8 @@ class SystemdBootStrategy:
     rootflags: str | None
     crypt_partition_path: str
     mount_root: Path
+    root_device: str = ""
+    root_label: str = "system"
 
     def commands(self) -> tuple[Command, ...]:
         loader_conf = self.mount_root / "boot/loader/loader.conf"
@@ -96,9 +98,13 @@ class SystemdBootStrategy:
             if self.encryption.fido2_unlock:
                 luks_options.append("fido2-device=auto")
             params.append(f"rd.luks.options={','.join(luks_options)}")
-            params.append(f"root=/dev/mapper/{self.encryption.mapper_name}")
+            root = (
+                self.root_device
+                or f"/dev/mapper/{self.encryption.mapper_name}"
+            )
+            params.append(f"root={root}")
         else:
-            params.append("root=LABEL=system")
+            params.append(f"root=LABEL={self.root_label}")
         if self.rootflags:
             params.append(self.rootflags)
         params.append("rw")
@@ -130,6 +136,8 @@ class GrubStrategy:
     rootflags: str | None
     crypt_partition_path: str
     mount_root: Path
+    root_device: str = ""
+    root_label: str = "system"
 
     def commands(self) -> tuple[Command, ...]:
         defaults_path = self.mount_root / "etc/default/grub"
@@ -196,7 +204,11 @@ class GrubStrategy:
             if self.encryption.header_path:
                 cryptdevice = f"{cryptdevice}:header={self.encryption.header_path}"
             params.append(cryptdevice)
-            params.append(f"root=/dev/mapper/{self.encryption.mapper_name}")
+            root = (
+                self.root_device
+                or f"/dev/mapper/{self.encryption.mapper_name}"
+            )
+            params.append(f"root={root}")
             luks_options: list[str] = []
             if self.encryption.header_path:
                 luks_options.append(f"header={self.encryption.header_path}")
@@ -207,7 +219,7 @@ class GrubStrategy:
             if luks_options:
                 params.append(f"rd.luks.options={','.join(luks_options)}")
         else:
-            params.append("root=LABEL=system")
+            params.append(f"root=LABEL={self.root_label}")
         if self.rootflags:
             params.append(self.rootflags)
         params.append("rw")
@@ -239,6 +251,8 @@ class UkiStrategy:
     rootflags: str | None
     crypt_partition_path: str
     mount_root: Path
+    root_device: str = ""
+    root_label: str = "system"
 
     def commands(self) -> tuple[Command, ...]:
         preset_path = (
@@ -309,7 +323,7 @@ class UkiStrategy:
         return tuple(cmds)
 
     def _cmdline_static(self) -> str:
-        params: list[str] = ["root=LABEL=system"]
+        params: list[str] = [f"root=LABEL={self.root_label}"]
         if self.rootflags:
             params.append(self.rootflags)
         params.append("rw")
@@ -318,9 +332,13 @@ class UkiStrategy:
 
     def _cmdline_with_uuid_placeholder(self) -> str:
         # The script substitutes ${LUKS_UUID} via the bash heredoc.
+        root = (
+            self.root_device
+            or f"/dev/mapper/{self.encryption.mapper_name}"
+        )
         params: list[str] = [
             f"rd.luks.name=${{LUKS_UUID}}={self.encryption.mapper_name}",
-            f"root=/dev/mapper/{self.encryption.mapper_name}",
+            f"root={root}",
         ]
         luks_options: list[str] = []
         if self.encryption.header_path:
@@ -355,6 +373,8 @@ class GrubBiosStrategy:
     crypt_partition_path: str
     mount_root: Path
     install_disk: str
+    root_device: str = ""
+    root_label: str = "system"
 
     def commands(self) -> tuple[Command, ...]:
         defaults_path = self.mount_root / "etc/default/grub"
@@ -415,14 +435,18 @@ class GrubBiosStrategy:
             if self.encryption.header_path:
                 cryptdevice = f"{cryptdevice}:header={self.encryption.header_path}"
             params.append(cryptdevice)
-            params.append(f"root=/dev/mapper/{self.encryption.mapper_name}")
+            root = (
+                self.root_device
+                or f"/dev/mapper/{self.encryption.mapper_name}"
+            )
+            params.append(f"root={root}")
             luks_options: list[str] = []
             if self.encryption.header_path:
                 luks_options.append(f"header={self.encryption.header_path}")
             if luks_options:
                 params.append(f"rd.luks.options={','.join(luks_options)}")
         else:
-            params.append("root=LABEL=system")
+            params.append(f"root=LABEL={self.root_label}")
         if self.rootflags:
             params.append(self.rootflags)
         params.append("rw")
@@ -439,35 +463,24 @@ def build_bootloader_strategy(
     rootflags: str | None,
     crypt_partition_path: str,
     mount_root: Path,
+    root_device: str = "",
+    root_label: str = "system",
 ) -> SystemdBootStrategy | GrubStrategy | UkiStrategy:
+    common: dict[str, object] = {
+        "spec": spec,
+        "kernel": kernel,
+        "microcode": microcode,
+        "encryption": encryption,
+        "rootflags": rootflags,
+        "crypt_partition_path": crypt_partition_path,
+        "mount_root": mount_root,
+        "root_device": root_device,
+        "root_label": root_label,
+    }
     if spec.kind is BootloaderKind.SYSTEMD_BOOT:
-        return SystemdBootStrategy(
-            spec=spec,
-            kernel=kernel,
-            microcode=microcode,
-            encryption=encryption,
-            rootflags=rootflags,
-            crypt_partition_path=crypt_partition_path,
-            mount_root=mount_root,
-        )
+        return SystemdBootStrategy(**common)  # type: ignore[arg-type]
     if spec.kind is BootloaderKind.GRUB:
-        return GrubStrategy(
-            spec=spec,
-            kernel=kernel,
-            microcode=microcode,
-            encryption=encryption,
-            rootflags=rootflags,
-            crypt_partition_path=crypt_partition_path,
-            mount_root=mount_root,
-        )
+        return GrubStrategy(**common)  # type: ignore[arg-type]
     if spec.kind is BootloaderKind.UKI:
-        return UkiStrategy(
-            spec=spec,
-            kernel=kernel,
-            microcode=microcode,
-            encryption=encryption,
-            rootflags=rootflags,
-            crypt_partition_path=crypt_partition_path,
-            mount_root=mount_root,
-        )
+        return UkiStrategy(**common)  # type: ignore[arg-type]
     raise ValueError(f"unsupported bootloader kind: {spec.kind!r}")

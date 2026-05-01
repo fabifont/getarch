@@ -30,9 +30,9 @@ from getarch.execution.dry_runner import DryRunner
 from getarch.execution.logging_runner import LoggingRunner
 from getarch.execution.pipeline import Pipeline
 from getarch.execution.real_runner import RealRunner
-from getarch.execution.state import PipelineState
-from getarch.installers.base import PlannedStepExecutor
+from getarch.execution.state import PipelineState, default_state_path
 from getarch.installers.confirmation import require_destructive_confirmation
+from getarch.installers.pipeline_builder import build_install_pipeline_steps
 from getarch.planning.planner import Planner
 from getarch.tui.screens.confirm import ConfirmModal
 
@@ -138,7 +138,13 @@ class TuiExecuteApp(App[int]):
         try:
             cfg = load_config(self._config_path)
             validate_semantics(cfg)
-            disk = Disk(path=DiskPath(Path(cfg.disk.path)), size_bytes=2**40)
+            # Container mode skips disk discovery (no real target disk).
+            if cfg.firmware == "container":
+                disk = None
+            else:
+                disk = Disk(
+                    path=DiskPath(Path(cfg.disk.path)), size_bytes=2**40,
+                )
             plan = Planner().build(
                 cfg=cfg, disk=disk, mount_root=self._mount_root,
             )
@@ -148,12 +154,27 @@ class TuiExecuteApp(App[int]):
                 force=False,
                 prompt=self.ask_confirmation,
             )
-            steps = tuple(PlannedStepExecutor(planned=s) for s in plan.steps)
+            # Reuse the install CLI's pipeline builder so the TUI's live
+            # path inherits the same disk-busy guard, runtime preflight,
+            # disk-wipe ordering, audit-log persistence, and container
+            # skips. Using the same builder is what keeps the two
+            # surfaces from drifting on safety guarantees.
+            steps = build_install_pipeline_steps(
+                plan,
+                cfg=cfg,
+                audit_runner=self._runner,
+                mount_root=self._mount_root,
+                dry_run=self._dry_run,
+            )
             ctx = ExecutionContext(
                 runner=self._runner, mount_root=self._mount_root,
             )
+            state_path = (
+                None if self._dry_run else default_state_path(self._mount_root)
+            )
             Pipeline(
-                steps=steps,  # type: ignore[arg-type]
+                steps=tuple(steps),  # type: ignore[arg-type]
+                state_path=state_path,
                 initial_state=PipelineState(),
             ).run(ctx)
             done_msg = (

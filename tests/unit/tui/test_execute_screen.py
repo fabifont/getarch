@@ -16,6 +16,8 @@ from pathlib import Path
 
 from getarch.config.examples import EXAMPLES
 from getarch.execution.fake_runner import FakeRunner
+from getarch.installers.pipeline_builder import build_install_pipeline_steps
+from getarch.tui.screens import execute as execute_mod
 from getarch.tui.screens.confirm import ConfirmModal
 from getarch.tui.screens.execute import TuiExecuteApp
 
@@ -94,3 +96,28 @@ def test_confirm_modal_no_overrides_initial_yes() -> None:
     modal.record_answer(answer=False)
     assert result == [False]
     assert done.is_set()
+
+
+def test_tui_real_run_uses_install_pipeline_builder(tmp_path: Path) -> None:
+    """Regression for codex P5 finding: --execute --no-dry-run used to
+    skip the install command's pipeline assembly (DiskBusyGuardStep,
+    RuntimePreflightStep, DiskWipeStep, AuditLogStep). Verify the
+    execute screen now imports the same builder so the surfaces can't
+    drift on safety guarantees."""
+
+    # The screen must reference the shared builder, not its own
+    # PlannedStepExecutor loop.
+    assert execute_mod.build_install_pipeline_steps is (
+        build_install_pipeline_steps
+    )
+
+    cfg_path = tmp_path / "c.json"
+    cfg_path.write_text(json.dumps(EXAMPLES["minimal-ext4"]))
+    # Just confirm instantiation still works after the refactor.
+    app = TuiExecuteApp(
+        config_path=cfg_path,
+        mount_root=Path("/mnt"),
+        dry_run=False,
+        runner_factory=FakeRunner,
+    )
+    assert isinstance(app.runner.inner, FakeRunner)
