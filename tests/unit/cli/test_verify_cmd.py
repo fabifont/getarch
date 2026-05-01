@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 
 from getarch.cli.app import app
 from getarch.config.examples import EXAMPLES
+from getarch.errors import EnvironmentError as EnvErr
 from getarch.system.preflight import EnvironmentReport
 
 
@@ -45,8 +46,6 @@ def test_verify_prints_ok_when_preflight_passes(
 def test_verify_propagates_preflight_failure(
     tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    from getarch.errors import EnvironmentError as EnvErr
-
     mocker.patch(
         "getarch.cli.commands.verify.preflight_environment",
         side_effect=EnvErr("no internet"),

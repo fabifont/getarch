@@ -122,8 +122,10 @@ def _assert_disk(
 
 
 def _assert_locale(cfg: Config, environment: EnvironmentProvider) -> None:
-    if cfg.locale.locale not in environment.supported_locales():
-        raise _EnvErr(f"locale {cfg.locale.locale!r} not supported on this ISO")
+    supported = environment.supported_locales()
+    for entry in cfg.locale.locale:
+        if entry not in supported:
+            raise _EnvErr(f"locale {entry!r} not supported on this ISO")
     if cfg.locale.keymap not in environment.keymaps():
         raise _EnvErr(f"keymap {cfg.locale.keymap!r} not available")
     if cfg.locale.timezone not in environment.timezones():

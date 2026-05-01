@@ -661,7 +661,7 @@ class Planner:
                     "/dev/stdin",
                     str(mount_root / "etc/locale.gen"),
                 ),
-                input=f"{cfg.locale.locale}\n",
+                input="".join(f"{entry}\n" for entry in cfg.locale.locale),
                 description="write /etc/locale.gen",
             ),
             Command(

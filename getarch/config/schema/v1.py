@@ -129,9 +129,17 @@ class InitramfsConfig(_Frozen):
 
 class LocaleConfig(_Frozen):
     lang: str
-    locale: str
+    locale: list[str] = Field(min_length=1)
     keymap: str
     timezone: str
+
+    @field_validator("locale", mode="before")
+    @classmethod
+    def _wrap_single_locale(cls, value: object) -> object:
+        # Back-compat: a JSON string is auto-promoted to a single-element list.
+        if isinstance(value, str):
+            return [value]
+        return value
 
 
 class SystemdNetworkdProfile(_Frozen):

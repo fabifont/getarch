@@ -27,10 +27,10 @@ def _check_kernel_in_packages(cfg: Config) -> None:
 
 
 def _check_locale_consistency(cfg: Config) -> None:
-    if cfg.locale.lang not in cfg.locale.locale:
+    if not any(cfg.locale.lang in entry for entry in cfg.locale.locale):
         raise SemanticConfigError(
-            f"locale.lang {cfg.locale.lang!r} must be a prefix of locale.locale "
-            f"{cfg.locale.locale!r}",
+            f"locale.lang {cfg.locale.lang!r} must be a prefix of at least one "
+            f"entry in locale.locale {cfg.locale.locale!r}",
         )
 
 
