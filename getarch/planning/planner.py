@@ -37,6 +37,7 @@ from getarch.planning.strategies.network import (
     NetworkConfigStrategy,
     NetworkdProfilePlan,
 )
+from getarch.planning.strategies.nftables import NftablesStrategy
 from getarch.planning.strategies.partitioning import SgdiskStrategy
 from getarch.planning.strategies.partitioning_bios import SgdiskBiosStrategy
 from getarch.planning.strategies.repositories import (
@@ -154,6 +155,9 @@ class Planner:
         network_step = self._network_config_step(cfg, mount_root)
         if network_step is not None:
             steps.append(network_step)
+        nftables_step = self._nftables_step(cfg, mount_root)
+        if nftables_step is not None:
+            steps.append(nftables_step)
         steps.append(self._initramfs_step(cfg, mount_root))
         steps.append(
             self._bootloader_step(
@@ -363,6 +367,8 @@ class Planner:
             pkgs.append("zram-generator")
         if cfg.filesystem.snapper and "snapper" not in pkgs:
             pkgs.append("snapper")
+        if cfg.network.firewall_nftables_rules and "nftables" not in pkgs:
+            pkgs.append("nftables")
         return PlannedStep(
             id="packages",
             title="Pacstrap base packages",
@@ -556,6 +562,8 @@ class Planner:
             for unit in ("snapper-timeline.timer", "snapper-cleanup.timer"):
                 if unit not in timers and unit not in enable:
                     timers.append(unit)
+        if cfg.network.firewall_nftables_rules and "nftables" not in enable:
+            enable.append("nftables")
         svc_cmds = tuple(
             Command(
                 argv=("systemctl", "enable", svc),
@@ -656,6 +664,20 @@ class Planner:
         return FilesystemSpec(
             kind=FilesystemKind(cfg.filesystem.kind),
             label=cfg.filesystem.label,
+        )
+
+    def _nftables_step(self, cfg: Config, mount_root: Path) -> PlannedStep | None:
+        rules = tuple(cfg.network.firewall_nftables_rules)
+        if not rules:
+            return None
+        cmds = NftablesStrategy(rules=rules, mount_root=mount_root).commands()
+        return PlannedStep(
+            id="nftables",
+            title="Render nftables ruleset",
+            phase=StepPhase.SYSTEM_CONFIG,
+            commands=cmds,
+            destructive=False,
+            description=f"write /etc/nftables.conf with {len(rules)} rules",
         )
 
     def _network_config_step(

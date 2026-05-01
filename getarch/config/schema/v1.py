@@ -190,6 +190,7 @@ class NetworkConfig(_Frozen):
     systemd_networkd: list[SystemdNetworkdProfile] = Field(default_factory=list)
     iwd_networks: list[IwdNetworkConfig] = Field(default_factory=list)
     bootstrap: WifiBootstrap | WiredBootstrap | None = Field(default=None)
+    firewall_nftables_rules: list[str] = Field(default_factory=list)
 
 
 class ServicesConfig(_Frozen):
