@@ -32,12 +32,31 @@ class SgdiskStrategy:
             cmds.extend(self._partition(index, f"+{size}MiB", "8200", "swap"))
             index += 1
 
-        if "home" in self.layout.layout and self.layout.home_size_mib:
-            size = self.layout.home_size_mib
-            cmds.extend(self._partition(index, f"+{size}MiB", "8302", "home"))
-            index += 1
-
         root_label = "cryptsystem" if self.encrypted else "system"
+        if "home" in self.layout.layout:
+            home_size = self.layout.home_size_mib
+            root_size = self.layout.root_size_mib
+            if home_size is not None:
+                # Original layout: home is fixed, root takes the rest.
+                cmds.extend(
+                    self._partition(index, f"+{home_size}MiB", "8302", "home"),
+                )
+                index += 1
+                cmds.extend(self._partition(index, "0", "8300", root_label))
+            elif root_size is not None:
+                # Reverse layout: root is fixed, home takes the rest.
+                cmds.extend(
+                    self._partition(index, f"+{root_size}MiB", "8300", root_label),
+                )
+                index += 1
+                cmds.extend(self._partition(index, "0", "8302", "home"))
+            else:
+                # Validator should have caught this; guard anyway.
+                raise ValueError(
+                    "home layout requires either home_size_mib or root_size_mib",
+                )
+            return tuple(cmds)
+
         cmds.extend(self._partition(index, "0", "8300", root_label))
         return tuple(cmds)
 

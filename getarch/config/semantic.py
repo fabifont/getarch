@@ -74,11 +74,24 @@ def _check_mirrors(cfg: Config) -> None:
 
 
 def _check_home_layout(cfg: Config) -> None:
-    if "home" in cfg.partitioning.layout and cfg.partitioning.home_size_mib is None:
+    if "home" not in cfg.partitioning.layout:
+        return
+    if (
+        cfg.partitioning.home_size_mib is None
+        and cfg.partitioning.root_size_mib is None
+    ):
         raise SemanticConfigError(
-            f"partitioning.layout={cfg.partitioning.layout!r} requires "
-            "partitioning.home_size_mib (rest-of-disk auto-allocation is not "
-            "implemented yet)",
+            f"partitioning.layout={cfg.partitioning.layout!r} requires either "
+            "partitioning.home_size_mib (fixed home, rest-of-disk root) or "
+            "partitioning.root_size_mib (fixed root, rest-of-disk home)",
+        )
+    if (
+        cfg.partitioning.home_size_mib is not None
+        and cfg.partitioning.root_size_mib is not None
+    ):
+        raise SemanticConfigError(
+            "partitioning.home_size_mib and partitioning.root_size_mib are "
+            "mutually exclusive (set exactly one for home layouts)",
         )
 
 

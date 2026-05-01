@@ -21,6 +21,7 @@ class PartitionLayout(_Frozen):
     efi_size_mib: int = Field(default=512, ge=128, le=2048)
     swap_size_mib: int | None = Field(default=None, ge=128)
     home_size_mib: int | None = Field(default=None, ge=1024)
+    root_size_mib: int | None = Field(default=None, ge=4096)
 
 
 class BtrfsSubvolumeConfig(_Frozen):
