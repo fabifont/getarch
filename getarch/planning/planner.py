@@ -139,6 +139,13 @@ class Planner:
         microcode: MicrocodeKind,
     ) -> None:
         steps.append(self._packages_step(cfg, mount_root, microcode))
+        if (
+            cfg.encryption.kind == "luks2"
+            and cfg.encryption.home_kind != "none"
+            and cfg.encryption.home_keyfile
+            and "home" in cfg.partitioning.layout
+        ):
+            steps.append(self._encryption_home_keyfile_step(cfg, mount_root))
         steps.append(self._fstab_step(mount_root))
         crypttab_step = self._crypttab_step(cfg, mount_root)
         if crypttab_step is not None:
@@ -228,6 +235,51 @@ class Planner:
             ),
             destructive=True,
             description="luksFormat then open home partition",
+        )
+
+    def _encryption_home_keyfile_step(
+        self, cfg: Config, mount_root: Path,
+    ) -> PlannedStep:
+        # The keyfile cannot be written to <mount> because the target
+        # filesystems aren't mounted yet at the encryption phase. Stash
+        # it under /run/getarch/home.key during install, then move it
+        # into place + add it as a luks key during system_config (after
+        # mounting). Implement here as a single step that defers both
+        # operations to runtime via bash so we don't need an extra
+        # phase.
+        if cfg.encryption.home_kind == "separate-key":
+            unlock_password = cfg.encryption.home_password or ""
+        else:
+            unlock_password = cfg.encryption.password or ""
+        target_dir = mount_root / "etc/cryptkey"
+        target_key = target_dir / "home.key"
+        partition = "/dev/disk/by-partlabel/home"
+        # Heredoc fed via bash -c. The unlock password is piped to
+        # cryptsetup luksAddKey via a subshell so it never appears in
+        # argv or the shell history.
+        script = (
+            "set -euo pipefail\n"
+            "umask 077\n"
+            f"install -d -m 0700 {target_dir}\n"
+            f"dd if=/dev/urandom of={target_key} bs=512 count=8 status=none\n"
+            f"chmod 0400 {target_key}\n"
+            "cryptsetup --batch-mode luksAddKey "
+            f"--key-file <(cat) {partition} {target_key}\n"
+        )
+        return PlannedStep(
+            id="encryption-home-keyfile",
+            title="Add /home auto-unlock keyfile",
+            phase=StepPhase.SYSTEM_CONFIG,
+            commands=(
+                Command(
+                    argv=("bash", "-c", script),
+                    input=unlock_password + "\n",
+                    sensitive=True,
+                    description=f"create {target_key} + register as LUKS key",
+                ),
+            ),
+            destructive=False,
+            description="generate keyfile under /etc/cryptkey/home.key",
         )
 
     def _encryption_step(self, cfg: Config) -> PlannedStep:
@@ -335,13 +387,19 @@ class Planner:
         )
         if wants_home:
             home_partition = "/dev/disk/by-partlabel/home"
+            key_source = (
+                "/etc/cryptkey/home.key"
+                if cfg.encryption.home_keyfile
+                else "none"
+            )
             lines.append(
                 'HOME_UUID="$(blkid -s UUID -o value '
                 + home_partition
                 + ')"',
             )
             lines.append(
-                f'echo "homecrypt UUID=${{HOME_UUID}} none luks" >> {crypttab_path}',
+                f'echo "homecrypt UUID=${{HOME_UUID}} {key_source} luks" '
+                f'>> {crypttab_path}',
             )
         if cfg.swap.kind == "partition" and cfg.swap.encrypt:
             # Static line — random key on every boot, no UUID needed

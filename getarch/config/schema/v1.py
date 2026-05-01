@@ -70,6 +70,7 @@ class EncryptionConfig(_Frozen):
     header_path: str | None = None
     home_kind: Literal["none", "shared-key", "separate-key"] = "none"
     home_password: str | None = None
+    home_keyfile: bool = False
 
     @model_validator(mode="after")
     def _password_required(self) -> EncryptionConfig:
@@ -92,6 +93,10 @@ class EncryptionConfig(_Frozen):
         if self.home_kind == "separate-key" and not self.home_password:
             raise ValueError(
                 "encryption.home_kind='separate-key' requires encryption.home_password",
+            )
+        if self.home_keyfile and self.home_kind == "none":
+            raise ValueError(
+                "encryption.home_keyfile requires encryption.home_kind != 'none'",
             )
         return self
 
