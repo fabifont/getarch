@@ -6,6 +6,9 @@ import click
 import typer
 
 from getarch.cli.commands import (
+    diff as diff_cmd,
+)
+from getarch.cli.commands import (
     discover as discover_cmd,
 )
 from getarch.cli.commands import (
@@ -67,6 +70,7 @@ def _main_callback(  # type: ignore[reportUnusedFunction]  # registered via deco
 app.command("validate")(validate_cmd.run)
 app.command("plan")(plan_cmd.run)
 app.command("install")(install_cmd.run)
+app.command("diff")(diff_cmd.run)
 app.command("schema")(schema_cmd.run)
 app.command("examples")(examples_cmd.run)
 app.command("discover")(discover_cmd.run)
