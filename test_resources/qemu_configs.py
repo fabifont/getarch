@@ -89,7 +89,10 @@ def build(fs: str, bootloader: str) -> dict[str, object]:
         },
         "network": {"hostname": "qemu-arch", "backend": "networkmanager"},
         "packages": packages,
-        "services": {"enable": ["NetworkManager", "sshd"], "timers": []},
+        # Smoke matrix uses the virtfs share for control, not SSH, so
+        # openssh + sshd are intentionally absent. Only NetworkManager so
+        # the installed system has DHCP on first boot.
+        "services": {"enable": ["NetworkManager"], "timers": []},
         "mirrors": {"strategy": "keep"},
         "users": {
             "root": {"kind": "plain", "password": "a"},

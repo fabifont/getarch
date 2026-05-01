@@ -166,7 +166,7 @@ class _QemuMonitor:
         return b"".join(chunks)
 
 
-def _build_qemu_argv(
+def _build_install_qemu_argv(
     *,
     iso: Path,
     disk: Path,
@@ -179,6 +179,8 @@ def _build_qemu_argv(
     memory_mib: int,
     cpus: int,
 ) -> list[str]:
+    """QEMU argv for the *install* phase: ISO attached, virtfs share live."""
+
     argv = [
         "qemu-system-x86_64",
         "-machine", "q35",
@@ -195,7 +197,47 @@ def _build_qemu_argv(
             f"local,path={workspace},mount_tag=shared,security_model=mapped,"
             "id=shared"
         ),
-        "-net", "user,hostfwd=tcp::0-:22",
+        "-net", "user",
+        "-net", "nic,model=virtio",
+        "-monitor", f"unix:{monitor_sock},server,nowait",
+        "-serial", f"file:{serial_log}",
+        "-display", "none",
+        "-no-reboot",
+    ]
+    if use_kvm:
+        argv.insert(1, "-enable-kvm")
+    return argv
+
+
+def _build_boot_qemu_argv(
+    *,
+    disk: Path,
+    ovmf_code: Path,
+    ovmf_vars: Path,
+    monitor_sock: Path,
+    serial_log: Path,
+    use_kvm: bool,
+    memory_mib: int,
+    cpus: int,
+) -> list[str]:
+    """QEMU argv for the *post-install boot verification* phase.
+
+    No ISO attached — firmware boots from the installed disk only. No
+    virtfs either; verification is done purely via the serial log to keep
+    the surface small.
+    """
+
+    argv = [
+        "qemu-system-x86_64",
+        "-machine", "q35",
+        "-cpu", "host" if use_kvm else "qemu64",
+        "-smp", str(cpus),
+        "-m", f"{memory_mib}M",
+        "-drive", f"if=pflash,format=raw,readonly=on,file={ovmf_code}",
+        "-drive", f"if=pflash,format=raw,file={ovmf_vars}",
+        "-drive", f"file={disk},if=virtio,format=qcow2",
+        "-boot", "order=c,menu=off",
+        "-net", "user",
         "-net", "nic,model=virtio",
         "-monitor", f"unix:{monitor_sock},server,nowait",
         "-serial", f"file:{serial_log}",
@@ -296,41 +338,59 @@ def _drive_install(
     return rc
 
 
-def _verify_reboot(
-    monitor: _QemuMonitor,
+def _verify_disk_boot(
     *,
-    serial_log: Path,
+    disk: Path,
+    ovmf_code: Path,
+    ovmf_vars: Path,
     workspace: Path,
+    serial_log: Path,
+    use_kvm: bool,
+    memory_mib: int,
+    cpus: int,
 ) -> bool:
-    # Truncate serial log so the reboot pattern match starts fresh.
+    """Restart QEMU disk-only and assert the installed system reaches login.
+
+    The install-phase QEMU is killed by the caller before we get here.
+    Booting without ``-cdrom``/``-virtfs`` proves UEFI picks up the
+    installed disk and userspace runs to a getty prompt. We do *not*
+    attempt to mount any host share or run commands inside the guest:
+    that surface area is what previously made the check unreliable.
+    """
+
+    monitor_sock = workspace / "monitor-boot.sock"
     serial_log.write_bytes(b"")
-    monitor.send("system_reset")
-    needle = _wait_for_serial_pattern(
-        serial_log,
-        (b"qemu-arch login:", b"root@qemu-arch", b"systemd[1]:"),
-        _REBOOT_TIMEOUT_SECONDS,
+    qemu_argv = _build_boot_qemu_argv(
+        disk=disk,
+        ovmf_code=ovmf_code,
+        ovmf_vars=ovmf_vars,
+        monitor_sock=monitor_sock,
+        serial_log=serial_log,
+        use_kvm=use_kvm,
+        memory_mib=memory_mib,
+        cpus=cpus,
     )
-    if needle is None:
-        return False
-    if needle != b"root@qemu-arch":
-        monitor.type_text("root\na\n")
-        if _wait_for_serial_pattern(
+    print("[qemu_smoke] booting installed disk:", " ".join(qemu_argv), flush=True)
+    proc = subprocess.Popen(qemu_argv)
+    monitor = _QemuMonitor(monitor_sock)
+    try:
+        monitor.connect(timeout=60.0)
+        needle = _wait_for_serial_pattern(
             serial_log,
-            (b"root@qemu-arch",),
+            (b"qemu-arch login:", b"Reached target Multi-User System"),
             _REBOOT_TIMEOUT_SECONDS,
-        ) is None:
-            return False
-    monitor.type_text(
-        "test -s /var/log/getarch.log && echo OK > /shared/boot.exit "
-        "|| echo FAIL > /shared/boot.exit\n",
-    )
-    boot_sentinel = workspace / "boot.exit"
-    deadline = time.monotonic() + _REBOOT_TIMEOUT_SECONDS
-    while time.monotonic() < deadline:
-        if boot_sentinel.is_file():
-            return boot_sentinel.read_text(encoding="utf-8").strip() == "OK"
-        time.sleep(_POLL_INTERVAL_SECONDS)
-    return False
+        )
+        return needle is not None
+    finally:
+        monitor.quit()
+        monitor.close()
+        with contextlib.suppress(ProcessLookupError):
+            proc.terminate()
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=10)
 
 
 def main() -> int:  # noqa: PLR0915, C901
@@ -376,7 +436,7 @@ def main() -> int:  # noqa: PLR0915, C901
         bootstrap=args.bootstrap,
     )
 
-    qemu_argv = _build_qemu_argv(
+    qemu_argv = _build_install_qemu_argv(
         iso=args.iso,
         disk=disk,
         workspace=share_dir,
@@ -388,27 +448,15 @@ def main() -> int:  # noqa: PLR0915, C901
         memory_mib=args.memory_mib,
         cpus=args.cpus,
     )
-    print("[qemu_smoke] launching:", " ".join(qemu_argv), flush=True)
+    print("[qemu_smoke] install phase:", " ".join(qemu_argv), flush=True)
     proc = subprocess.Popen(qemu_argv)
     monitor = _QemuMonitor(monitor_sock)
     exit_code = 3
+    rc: int | None = None
+    boot_serial_log = workspace / "serial-boot.log"
     try:
         monitor.connect(timeout=60.0)
         rc = _drive_install(monitor, serial_log=serial_log, workspace=share_dir)
-        if rc != 0:
-            print(f"[qemu_smoke] install exited rc={rc}", file=sys.stderr)
-            exit_code = 1
-        elif args.reboot_check:
-            if _verify_reboot(monitor, serial_log=serial_log, workspace=share_dir):
-                exit_code = 0
-            else:
-                print(
-                    "[qemu_smoke] installed system did not boot cleanly",
-                    file=sys.stderr,
-                )
-                exit_code = 2
-        else:
-            exit_code = 0
     except RuntimeError as exc:
         print(f"[qemu_smoke] orchestration error: {exc}", file=sys.stderr)
         exit_code = 3
@@ -423,12 +471,44 @@ def main() -> int:  # noqa: PLR0915, C901
             proc.kill()
             proc.wait(timeout=10)
 
-        # Always copy logs out for CI artifact upload.
-        log_dir = Path(os.environ.get("QEMU_SMOKE_LOG_DIR", str(workspace / "logs")))
-        log_dir.mkdir(parents=True, exist_ok=True)
-        for source in (serial_log, share_dir / "install.log", share_dir / "install.exit"):
-            if source.is_file():
-                shutil.copy2(source, log_dir / source.name)
+    if rc is None:
+        # Orchestration error already reported; jump to log copy.
+        pass
+    elif rc != 0:
+        print(f"[qemu_smoke] install exited rc={rc}", file=sys.stderr)
+        exit_code = 1
+    elif args.reboot_check:
+        if _verify_disk_boot(
+            disk=disk,
+            ovmf_code=args.ovmf_code,
+            ovmf_vars=args.ovmf_vars,
+            workspace=workspace,
+            serial_log=boot_serial_log,
+            use_kvm=not args.no_kvm,
+            memory_mib=args.memory_mib,
+            cpus=args.cpus,
+        ):
+            exit_code = 0
+        else:
+            print(
+                "[qemu_smoke] installed system did not boot cleanly",
+                file=sys.stderr,
+            )
+            exit_code = 2
+    else:
+        exit_code = 0
+
+    # Always copy logs out for CI artifact upload.
+    log_dir = Path(os.environ.get("QEMU_SMOKE_LOG_DIR", str(workspace / "logs")))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    for source in (
+        serial_log,
+        boot_serial_log,
+        share_dir / "install.log",
+        share_dir / "install.exit",
+    ):
+        if source.is_file():
+            shutil.copy2(source, log_dir / source.name)
 
     return exit_code
 

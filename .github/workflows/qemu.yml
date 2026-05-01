@@ -19,8 +19,34 @@ on:
 # python3.14 + uv preinstalled is required. The runner needs read access to
 # /dev/kvm; either run as a member of the kvm group or set the
 # `--device /dev/kvm` capability on its container.
+#
+# SECURITY: the `smoke` job runs on a self-hosted runner. To prevent
+# arbitrary fork-PR code from executing on that machine, every job in this
+# workflow short-circuits via `should-run` for pull_request events from
+# forks. Same-repo PRs and pushes to main/dev still run normally, and
+# workflow_dispatch is always allowed.
 jobs:
+  should-run:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          if [ "$EVENT" = "pull_request" ] && [ "$PR_REPO" != "$BASE_REPO" ]; then
+            echo "skipping fork PR ($PR_REPO != $BASE_REPO)"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build-zipapp:
+    needs: should-run
+    if: needs.should-run.outputs.run == 'true'
     runs-on: ubuntu-latest
     outputs:
       zipapp-key: ${{ steps.upload.outputs.artifact-id }}
@@ -45,7 +71,8 @@ jobs:
           path: dist/getarch.pyz
 
   smoke:
-    needs: build-zipapp
+    needs: [should-run, build-zipapp]
+    if: needs.should-run.outputs.run == 'true'
     runs-on: [self-hosted, kvm]
     strategy:
       fail-fast: false

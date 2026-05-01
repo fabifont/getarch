@@ -136,11 +136,14 @@ v2.0.0.
 
 ### QEMU smoke test
 * **Status:** done. `.github/workflows/qemu.yml` boots the upstream Arch
-  ISO under QEMU/KVM on a self-hosted runner for every PR and push to
-  `main`/`dev`. The matrix covers ext4/btrfs/xfs/f2fs × systemd-boot/grub/
-  uki (12 cells, `fail-fast: false`). `test_resources/qemu_smoke.py`
-  drives the install via the QEMU monitor + virtfs share, then resets the
-  VM and asserts the installed system boots and persisted the audit log.
+  ISO under QEMU/KVM on a self-hosted runner for every push to
+  `main`/`dev` and same-repo PR (fork PRs are skipped via a `should-run`
+  gate so untrusted code never reaches the self-hosted runner). The
+  matrix covers ext4/btrfs/xfs/f2fs × systemd-boot/grub/uki (12 cells,
+  `fail-fast: false`). `test_resources/qemu_smoke.py` drives the install
+  via the QEMU monitor + virtfs share, then restarts QEMU disk-only
+  (no ISO, no virtfs) and asserts the installed system reaches a getty
+  on serial.
 * **Runner requirements:** label `kvm`, KVM access, `qemu-system-x86_64`,
   `qemu-img`, `OVMF` firmware (`/usr/share/edk2/x64/OVMF_*.4m.fd`),
   Python 3.14, and `uv`.
