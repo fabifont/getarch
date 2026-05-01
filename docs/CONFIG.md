@@ -113,10 +113,25 @@ Optional unattended-unlock fields (LUKS2 only):
   the system unlocks at boot when the TPM2 measurement matches.
 * `fido2_unlock: true` — runs `systemd-cryptenroll --fido2-device=auto` so
   a connected FIDO2 token can unlock the volume.
-* `header_path: "/path/to/header"` — detached LUKS header. The path is
-  validated by environment preflight; every `cryptsetup` invocation gets
-  `--header=<header_path>` and the bootloader cmdline gains
-  `rd.luks.options=header=...`.
+* `header_path: "/dev/disk/by-partlabel/cryptheader"` — detached LUKS
+  header. Requires a partitioning layout that includes a `cryptheader`
+  carrier (e.g. `efi-luksheader-root`); semantic validation enforces
+  this. Every `cryptsetup` invocation gets `--header=<header_path>`
+  and the bootloader cmdline gains `rd.luks.options=header=...`.
+
+Encrypted `/home` (when the layout includes a separate home partition):
+
+* `home_kind: "shared-key"` — formats `/home` as a second LUKS2
+  container reusing the root password. **Caveat:** the current crypttab
+  entry uses `none` for the key source, so systemd prompts for the
+  passphrase a second time at boot. A future iteration will derive a
+  keyfile from the unlocked root.
+* `home_kind: "separate-key"` — also requires `home_password`; same
+  prompt-at-boot caveat.
+
+Encrypted swap is **not** yet covered: when both `swap` and `LUKS2` are
+in the layout, the swap partition stays plaintext (data spilling into
+swap can leak from RAM). Tracked under P5.
 
 > Storing a plaintext password in the JSON is unsafe. The roadmap covers
 > prompt-only and secret-file modes that avoid this.
@@ -394,6 +409,17 @@ with the chosen filesystem and labels it with `partition_label`.
   stub `Disk` of the path declared in each config.
 * `getarch tui CONFIG` — Textual TUI for browsing a config + plan
   read-only. Requires `getarch[tui]` (installs `textual`).
+* `getarch tui CONFIG --execute` — live install screen (currently
+  dry-run only; modal confirmations land in a follow-up).
+* `getarch verify CONFIG` — re-run preflight checks against the host
+  without building or executing the plan.
+* `getarch microcode CONFIG` — print the resolved `MicrocodeKind` for
+  this host given the config (helps debug `microcode.kind="auto"`).
+* `getarch diff CONFIG_A CONFIG_B` — unified plan diff between two
+  configs.
+* `getarch diff CONFIG --against-installed` — diff the new plan
+  against the plan persisted at `<mount>/var/log/getarch.state.json`
+  from the previous install.
 
 ## Install command flags
 

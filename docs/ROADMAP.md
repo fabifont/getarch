@@ -338,6 +338,31 @@ matches a real hardware/use case.
 * **Plan:** new bootstrap kind that writes `/etc/wireguard/wg0.conf`,
   enables `wg-quick@wg0` *before* the runtime preflight.
 
+### Encrypted swap
+* **Why:** `LUKS2` root + a `swap` partition leaves the swap partition
+  plaintext, so anything paged out of RAM (passwords, keys) can leak.
+* **Plan:** new `encryption-swap` planner step that runs
+  `cryptsetup open --type plain --key-file /dev/urandom <swap>
+  swapcrypt`, with a corresponding `crypttab` entry. mkswap/swapon
+  target the mapper. Survives reboot via systemd's
+  `systemd-cryptsetup@swapcrypt.service` reading from crypttab.
+
+### Auto-unlock for encrypted /home
+* **Why:** `home_kind="shared-key"` currently prompts the user for the
+  passphrase twice (root + home) because crypttab uses `none` for the
+  key source.
+* **Plan:** generate a 4 KiB random key under `/etc/cryptkey/home.key`
+  with mode `0600` *inside the unlocked root*; rewrite the crypttab
+  entry to point at it. systemd unlocks `/home` automatically after
+  pivot.
+
+### TUI execution: confirmation modals + real runner
+* **Why:** `getarch tui --execute` runs the dry-run pipeline. Live
+  install needs interactive confirmations and password prompts.
+* **Plan:** Textual modal screen wrapping the destructive confirmation
+  prompt; password prompts piped to the runner via a thread-safe
+  callback.
+
 ### nftables ruleset rendering
 * **Why:** users want a baseline firewall on first boot.
 * **Plan:** schema field for a list of rules; planner writes
