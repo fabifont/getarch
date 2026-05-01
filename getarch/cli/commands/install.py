@@ -218,6 +218,16 @@ def run(
             "previous step IDs."
         ),
     ),
+    audit_hmac_key: Path | None = typer.Option(
+        None,
+        "--audit-hmac-key",
+        help=(
+            "Path to a key file (mode 0600) used to append an HMAC-SHA256 "
+            "trailer to <mount>/var/log/getarch.log. Verify with "
+            "`openssl dgst -sha256 -hmac \"$(cat KEY)\" -binary` over the "
+            "log body excluding the trailer line."
+        ),
+    ),
 ) -> None:
     """Run the full install pipeline."""
     ctx = click.get_current_context()
@@ -264,7 +274,22 @@ def run(
                 report.existing_filesystems_seen if report else ()
             ),
         )
-        audit_runner = LoggingRunner(inner=_build_runner(dry_run=dry_run))
+        hmac_key_bytes: bytes | None = None
+        if audit_hmac_key is not None:
+            try:
+                hmac_key_bytes = audit_hmac_key.read_bytes().strip()
+            except OSError as exc:
+                raise PlanError(
+                    f"--audit-hmac-key: cannot read {audit_hmac_key}: {exc}",
+                ) from exc
+            if not hmac_key_bytes:
+                raise PlanError(
+                    f"--audit-hmac-key: {audit_hmac_key} is empty",
+                )
+        audit_runner = LoggingRunner(
+            inner=_build_runner(dry_run=dry_run),
+            hmac_key=hmac_key_bytes,
+        )
         plan_blob = render_json(plan)
         plan_fingerprint = fingerprint_plan_text(plan_blob)
         initial_state = _resolve_initial_state(
