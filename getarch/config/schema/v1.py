@@ -68,6 +68,8 @@ class EncryptionConfig(_Frozen):
     tpm2_unlock: bool = False
     fido2_unlock: bool = False
     header_path: str | None = None
+    home_kind: Literal["none", "shared-key", "separate-key"] = "none"
+    home_password: str | None = None
 
     @model_validator(mode="after")
     def _password_required(self) -> EncryptionConfig:
@@ -83,6 +85,14 @@ class EncryptionConfig(_Frozen):
             )
         if self.tpm2_unlock and self.fido2_unlock:
             raise ValueError("set at most one of tpm2_unlock or fido2_unlock")
+        if self.home_kind != "none" and self.kind != "luks2":
+            raise ValueError(
+                "encryption.home_kind requires encryption.kind='luks2'",
+            )
+        if self.home_kind == "separate-key" and not self.home_password:
+            raise ValueError(
+                "encryption.home_kind='separate-key' requires encryption.home_password",
+            )
         return self
 
 

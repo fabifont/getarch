@@ -97,13 +97,17 @@ def _check_home_layout(cfg: Config) -> None:
 
 
 def _check_luks_home_incompatible(cfg: Config) -> None:
-    if cfg.encryption.kind == "luks2" and "home" in cfg.partitioning.layout:
+    if (
+        cfg.encryption.kind == "luks2"
+        and "home" in cfg.partitioning.layout
+        and cfg.encryption.home_kind == "none"
+    ):
         raise SemanticConfigError(
-            "encryption.kind='luks2' with a separate /home partition is not "
-            "supported yet: only the root partition would be encrypted, leaving "
-            "user data on a plaintext /home. Use a layout without 'home' "
-            "(e.g. efi-root or efi-swap-root) and rely on a /home subvolume, "
-            "or wait for encrypted-home support.",
+            "encryption.kind='luks2' with a separate /home partition leaves "
+            "user data on a plaintext /home. Set encryption.home_kind to "
+            "'shared-key' or 'separate-key' to encrypt /home too, or use a "
+            "layout without 'home' (e.g. efi-root, efi-swap-root) and rely "
+            "on a /home subvolume.",
         )
 
 

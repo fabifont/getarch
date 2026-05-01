@@ -108,6 +108,12 @@ class Planner:
         steps.append(self._partitioning_step(cfg, disk, encrypted=encrypted))
         if encrypted:
             steps.append(self._encryption_step(cfg))
+        if (
+            encrypted
+            and cfg.encryption.home_kind != "none"
+            and "home" in cfg.partitioning.layout
+        ):
+            steps.append(self._encryption_home_step(cfg))
         root_partition = (
             f"/dev/mapper/{cfg.encryption.mapper_name}"
             if encrypted
@@ -134,6 +140,9 @@ class Planner:
     ) -> None:
         steps.append(self._packages_step(cfg, mount_root, microcode))
         steps.append(self._fstab_step(mount_root))
+        crypttab_step = self._crypttab_step(cfg, mount_root)
+        if crypttab_step is not None:
+            steps.append(crypttab_step)
         steps.append(self._system_config_step(cfg, mount_root))
         network_step = self._network_config_step(cfg, mount_root)
         if network_step is not None:
@@ -186,6 +195,41 @@ class Planner:
             ),
         )
 
+    def _encryption_home_step(self, cfg: Config) -> PlannedStep:
+        if cfg.encryption.home_kind == "separate-key":
+            password = cfg.encryption.home_password or ""
+        else:
+            password = cfg.encryption.password or ""
+        partition = "/dev/disk/by-partlabel/home"
+        return PlannedStep(
+            id="encryption-home",
+            title="Set up LUKS2 /home",
+            phase=StepPhase.ENCRYPTION,
+            commands=(
+                Command(
+                    argv=(
+                        "cryptsetup",
+                        "--batch-mode",
+                        "luksFormat",
+                        "--type",
+                        "luks2",
+                        partition,
+                    ),
+                    input=password + "\n",
+                    sensitive=True,
+                    description="format LUKS2 container on home partition",
+                ),
+                Command(
+                    argv=("cryptsetup", "open", partition, "homecrypt"),
+                    input=password + "\n",
+                    sensitive=True,
+                    description="open LUKS2 home as /dev/mapper/homecrypt",
+                ),
+            ),
+            destructive=True,
+            description="luksFormat then open home partition",
+        )
+
     def _encryption_step(self, cfg: Config) -> PlannedStep:
         spec = EncryptionSpec(
             kind=EncryptionKind.LUKS2,
@@ -213,7 +257,15 @@ class Planner:
     ) -> tuple[PlannedStep, PlannedStep]:
         has_home = "home" in cfg.partitioning.layout
         fs_spec = self._fs_spec(cfg, drop_home_subvolume=has_home)
-        home_partition = "/dev/disk/by-partlabel/home" if has_home else None
+        if has_home:
+            home_partition: str | None = (
+                "/dev/mapper/homecrypt"
+                if cfg.encryption.kind == "luks2"
+                and cfg.encryption.home_kind != "none"
+                else "/dev/disk/by-partlabel/home"
+            )
+        else:
+            home_partition = None
         fs_cmds = build_filesystem_strategy(
             spec=fs_spec,
             root_partition=root_partition,
@@ -271,6 +323,36 @@ class Planner:
             ),
             destructive=False,
             description="install base packages into the new system",
+        )
+
+    def _crypttab_step(self, cfg: Config, mount_root: Path) -> PlannedStep | None:
+        if (
+            cfg.encryption.kind != "luks2"
+            or cfg.encryption.home_kind == "none"
+            or "home" not in cfg.partitioning.layout
+        ):
+            return None
+        crypttab_path = mount_root / "etc/crypttab"
+        partition = "/dev/disk/by-partlabel/home"
+        # Resolve UUID at execution time to keep the crypttab line stable
+        # across re-installs.
+        script = (
+            "set -euo pipefail\n"
+            f'HOME_UUID="$(blkid -s UUID -o value {partition})"\n'
+            f'echo "homecrypt UUID=${{HOME_UUID}} none luks" >> {crypttab_path}\n'
+        )
+        return PlannedStep(
+            id="crypttab-home",
+            title="Append /home to crypttab",
+            phase=StepPhase.FSTAB,
+            commands=(
+                Command(
+                    argv=("bash", "-c", script),
+                    description=f"append homecrypt entry to {crypttab_path}",
+                ),
+            ),
+            destructive=False,
+            description=f"add homecrypt UUID to {crypttab_path}",
         )
 
     def _fstab_step(self, mount_root: Path) -> PlannedStep:
