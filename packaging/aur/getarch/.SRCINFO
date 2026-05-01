@@ -1,0 +1,20 @@
+pkgbase = getarch
+	pkgdesc = Declarative Arch Linux base-system installer
+	pkgver = 2.0.0a0
+	pkgrel = 1
+	url = https://github.com/fabifont/getarch
+	arch = any
+	license = GPL-3.0-or-later
+	makedepends = python-build
+	makedepends = python-installer
+	makedepends = python-hatchling
+	depends = python>=3.14
+	depends = python-pydantic
+	depends = python-typer
+	depends = python-rich
+	depends = python-yaml
+	optdepends = python-textual: TUI plan browser and live-execute screen
+	source = getarch-2.0.0a0.tar.gz::https://files.pythonhosted.org/packages/source/g/getarch/getarch-2.0.0a0.tar.gz
+	sha256sums = SKIP
+
+pkgname = getarch

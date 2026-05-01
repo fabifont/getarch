@@ -14,8 +14,17 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       sdist: ${{ steps.upload.outputs.artifact-id }}
+    env:
+      # Reproducible-build knobs. SOURCE_DATE_EPOCH is overridden per
+      # step from the tagged commit's timestamp; PYTHONHASHSEED + LC_ALL
+      # silence non-deterministic ordering in dict iteration / locale.
+      PYTHONHASHSEED: "0"
+      LC_ALL: "C"
+      TZ: "UTC"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need the tagged commit's history for %ct
       - uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
@@ -23,12 +32,48 @@ jobs:
         run: uv python install 3.14
       - name: Sync deps
         run: uv sync --all-groups
-      - name: Build wheel + sdist
-        run: uv build
-      - name: Build single-file zipapp via shiv
+      - name: Compute SOURCE_DATE_EPOCH from tagged commit
+        id: sde
         run: |
-          uv run --with shiv shiv -c getarch -o dist/getarch.pyz .
+          epoch=$(git log -1 --format=%ct)
+          echo "epoch=$epoch" >> "$GITHUB_OUTPUT"
+          echo "SOURCE_DATE_EPOCH=$epoch" >> "$GITHUB_ENV"
+          echo "Using SOURCE_DATE_EPOCH=$epoch"
+      - name: Build wheel + sdist (reproducible)
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.sde.outputs.epoch }}
+        run: uv build
+      - name: Build single-file zipapp via shiv (reproducible)
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.sde.outputs.epoch }}
+        run: |
+          uv run --with shiv shiv \
+            --reproducible \
+            --build-id "$SOURCE_DATE_EPOCH" \
+            -c getarch \
+            -o dist/getarch.pyz \
+            .
           chmod +x dist/getarch.pyz
+      - name: Verify reproducibility (rebuild + diff)
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.sde.outputs.epoch }}
+        run: |
+          mkdir -p /tmp/dist-rebuild
+          cp dist/getarch.pyz /tmp/dist-rebuild/getarch.pyz.first
+          rm -f dist/getarch.pyz
+          uv run --with shiv shiv \
+            --reproducible \
+            --build-id "$SOURCE_DATE_EPOCH" \
+            -c getarch \
+            -o dist/getarch.pyz \
+            .
+          chmod +x dist/getarch.pyz
+          if ! cmp -s /tmp/dist-rebuild/getarch.pyz.first dist/getarch.pyz; then
+            echo "::error::getarch.pyz is NOT bit-identical between two builds" >&2
+            sha256sum /tmp/dist-rebuild/getarch.pyz.first dist/getarch.pyz
+            exit 1
+          fi
+          echo "Reproducibility verified."
       - name: Upload dist artifacts
         id: upload
         uses: actions/upload-artifact@v4

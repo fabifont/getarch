@@ -1,0 +1,25 @@
+# Maintainer: Fabio Fontana <fabio.fontana@mailbox.org>
+pkgname=getarch
+pkgver=2.0.0a0
+pkgrel=1
+pkgdesc="Declarative Arch Linux base-system installer"
+arch=('any')
+url="https://github.com/fabifont/getarch"
+license=('GPL-3.0-or-later')
+depends=('python>=3.14' 'python-pydantic' 'python-typer' 'python-rich' 'python-yaml')
+makedepends=('python-build' 'python-installer' 'python-hatchling')
+optdepends=(
+    'python-textual: TUI plan browser and live-execute screen'
+)
+source=("${pkgname}-${pkgver}.tar.gz::https://files.pythonhosted.org/packages/source/g/${pkgname}/${pkgname}-${pkgver}.tar.gz")
+sha256sums=('SKIP')  # Replace with sha256 from PyPI on every release.
+
+build() {
+    cd "${pkgname}-${pkgver}"
+    python -m build --wheel --no-isolation
+}
+
+package() {
+    cd "${pkgname}-${pkgver}"
+    python -m installer --destdir="${pkgdir}" dist/*.whl
+}
