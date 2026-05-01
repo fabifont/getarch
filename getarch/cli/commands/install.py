@@ -21,6 +21,7 @@ from getarch.execution.logging_runner import LoggingRunner
 from getarch.execution.pipeline import Pipeline
 from getarch.execution.real_runner import RealRunner
 from getarch.execution.runner import CommandRunner
+from getarch.execution.state import PipelineState, default_state_path
 from getarch.installers.base import PlannedStepExecutor
 from getarch.installers.confirmation import require_destructive_confirmation
 from getarch.installers.preflight import (
@@ -85,6 +86,36 @@ def _resolve_environment(
     return report, report.cpu_vendor
 
 
+def _resolve_initial_state(
+    *,
+    mount_root: Path,
+    resume: bool,
+    dry_run: bool,
+    console: GetarchConsole,
+) -> PipelineState:
+    if dry_run:
+        return PipelineState()
+    state_path = default_state_path(mount_root)
+    if not state_path.is_file():
+        if resume:
+            console.log(
+                f"[yellow]--resume given but no state at {state_path}; "
+                "starting from scratch[/yellow]",
+            )
+        return PipelineState()
+    if not resume:
+        raise PlanError(
+            f"existing pipeline state at {state_path}; pass --resume to "
+            "continue, or remove the file to start over",
+        )
+    state = PipelineState.read(state_path)
+    console.log(
+        f"[yellow]resuming after {len(state.completed)} completed steps "
+        f"(last error: {state.last_error or 'none'})[/yellow]",
+    )
+    return state
+
+
 def _execute_pipeline(
     plan: InstallPlan,
     *,
@@ -95,6 +126,7 @@ def _execute_pipeline(
     force: bool,
     dry_run: bool,
     skip_runtime_preflight: bool,
+    initial_state: PipelineState,
 ) -> None:
     exec_ctx = ExecutionContext(
         runner=audit_runner,
@@ -134,7 +166,12 @@ def _execute_pipeline(
     if audit_step is not None:
         # No cleanup step in this plan (unusual): still flush the audit log.
         steps.append(audit_step)
-    Pipeline(steps=tuple(steps)).run(exec_ctx)  # type: ignore[arg-type]
+    state_path = None if dry_run else default_state_path(mount_root)
+    Pipeline(
+        steps=tuple(steps),  # type: ignore[arg-type]
+        state_path=state_path,
+        initial_state=initial_state,
+    ).run(exec_ctx)
 
 
 def _flush_audit_on_failure(
@@ -171,6 +208,11 @@ def run(
         False,
         "--skip-environment-preflight",
     ),
+    resume: bool = typer.Option(
+        False,
+        "--resume",
+        help="Skip steps recorded in <mount>/var/log/getarch.state.json from a previous run.",
+    ),
 ) -> None:
     """Run the full install pipeline."""
     ctx = click.get_current_context()
@@ -206,6 +248,12 @@ def run(
             mounts_summary=report.mountpoints_seen if report else (),
         )
         audit_runner = LoggingRunner(inner=_build_runner(dry_run=dry_run))
+        initial_state = _resolve_initial_state(
+            mount_root=mount_root,
+            resume=resume,
+            dry_run=dry_run,
+            console=console,
+        )
         try:
             _execute_pipeline(
                 plan,
@@ -216,6 +264,7 @@ def run(
                 force=force,
                 dry_run=dry_run,
                 skip_runtime_preflight=skip_runtime_preflight,
+                initial_state=initial_state,
             )
         except GetarchError:
             if not dry_run:
