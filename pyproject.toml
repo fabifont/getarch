@@ -23,6 +23,11 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.optional-dependencies]
+tui = [
+    "textual>=0.60",
+]
+
 [project.scripts]
 getarch = "getarch.cli.app:main"
 
@@ -47,6 +52,7 @@ dev = [
     "pytest-mock>=3.12",
     "ruff>=0.6",
     "syrupy>=4.6",
+    "textual>=0.60",
 ]
 release = [
     "shiv>=1.0",

@@ -24,6 +24,9 @@ from getarch.cli.commands import (
     schema as schema_cmd,
 )
 from getarch.cli.commands import (
+    tui as tui_cmd,
+)
+from getarch.cli.commands import (
     validate as validate_cmd,
 )
 from getarch.cli.commands import (
@@ -74,6 +77,7 @@ app.command("diff")(diff_cmd.run)
 app.command("schema")(schema_cmd.run)
 app.command("examples")(examples_cmd.run)
 app.command("discover")(discover_cmd.run)
+app.command("tui")(tui_cmd.run)
 app.command("version")(version_cmd.run)
 
 
