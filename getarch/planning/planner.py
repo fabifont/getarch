@@ -483,10 +483,15 @@ class Planner:
     def _fs_spec(self, cfg: Config, *, drop_home_subvolume: bool = False) -> FilesystemSpec:
         if cfg.filesystem.kind == "btrfs":
             opts = tuple(cfg.filesystem.mount_options) or DEFAULT_BTRFS_MOUNT_OPTIONS
+            # snapper manages /.snapshots itself: dropping @snapshots from
+            # the planner-built subvolume list avoids the conflict where
+            # `snapper create-config /` would try to take over an already
+            # mounted @snapshots subvolume.
             subs = tuple(
                 BtrfsSubvolume(name=s.name, mountpoint=Path(s.mountpoint))
                 for s in cfg.filesystem.subvolumes
                 if not (drop_home_subvolume and s.mountpoint == "/home")
+                and not (cfg.filesystem.snapper and s.mountpoint == "/.snapshots")
             )
             return FilesystemSpec(
                 kind=FilesystemKind.BTRFS,

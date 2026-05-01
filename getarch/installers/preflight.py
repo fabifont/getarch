@@ -90,19 +90,30 @@ class RuntimeNetworkBootstrapStep:
         if self.backend == "iwctl":
             if not self.ssid or self.psk is None:
                 raise _EnvErr("wifi bootstrap requires ssid and psk")
+            # Drop the PSK into iwd's per-network state file (mode 0600)
+            # so it never appears in argv / /proc. iwctl + iwd then
+            # connect without --passphrase.
+            psk_path = f"/var/lib/iwd/{self.ssid}.psk"
+            results.append(
+                ctx.runner.run(
+                    Command(
+                        argv=("install", "-Dm600", "/dev/stdin", psk_path),
+                        input=f"[Security]\nPassphrase = {self.psk}\n",
+                        sensitive=True,
+                        description=f"write {psk_path}",
+                    ),
+                ),
+            )
             results.append(
                 ctx.runner.run(
                     Command(
                         argv=(
                             "iwctl",
-                            "--passphrase",
-                            self.psk,
                             "station",
                             self.device,
                             "connect",
                             self.ssid,
                         ),
-                        sensitive=True,
                         description=(
                             f"connect {self.device} to wifi {self.ssid}"
                         ),

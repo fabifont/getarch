@@ -13,7 +13,7 @@ def _ctx(runner: FakeRunner) -> ExecutionContext:
     return ExecutionContext(runner=runner, mount_root=Path("/mnt"))
 
 
-def test_iwctl_step_redacts_psk_and_runs_connect() -> None:
+def test_iwctl_step_writes_psk_to_file_and_runs_connect() -> None:
     runner = FakeRunner()
     step = RuntimeNetworkBootstrapStep(
         backend="iwctl",
@@ -23,11 +23,21 @@ def test_iwctl_step_redacts_psk_and_runs_connect() -> None:
     )
     res = step.execute(_ctx(runner))
     assert res.status is StepStatus.SUCCEEDED
-    cmd = runner.recorded[0]
-    assert cmd.argv[0] == "iwctl"
-    assert "connect" in cmd.argv
-    assert "mywifi" in cmd.argv
-    assert cmd.sensitive is True
+    psk_cmd = runner.recorded[0]
+    # PSK is fed via stdin to install -Dm600 — never via argv.
+    assert psk_cmd.argv[0] == "install"
+    assert psk_cmd.argv[-1] == "/var/lib/iwd/mywifi.psk"
+    assert psk_cmd.sensitive is True
+    assert "hunter2" not in " ".join(psk_cmd.argv)
+    assert psk_cmd.input is not None
+    assert "hunter2" in psk_cmd.input
+
+    connect_cmd = runner.recorded[1]
+    assert connect_cmd.argv[0] == "iwctl"
+    assert "connect" in connect_cmd.argv
+    assert "mywifi" in connect_cmd.argv
+    # No PSK argv on the connect command.
+    assert "hunter2" not in " ".join(connect_cmd.argv)
 
 
 def test_dhcp_step_runs_dhcpcd() -> None:

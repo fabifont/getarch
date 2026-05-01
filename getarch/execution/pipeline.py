@@ -27,6 +27,19 @@ class _Step(Protocol):
     def execute(self, ctx: ExecutionContext) -> StepResult: ...
 
 
+# Steps that always re-run on resume — guards and runtime bring-up that
+# must reflect *current* state, not yesterday's state. Adding an ID here
+# both prevents skipping during resume and prevents persisting it as
+# completed.
+_NON_RESUMABLE_STEP_IDS: frozenset[str] = frozenset(
+    {
+        "disk-busy-guard",
+        "runtime-network-bootstrap",
+        "runtime-preflight",
+    },
+)
+
+
 @dataclass(frozen=True, slots=True)
 class Pipeline:
     steps: tuple[_Step, ...]
@@ -35,7 +48,11 @@ class Pipeline:
 
     def run(self, ctx: ExecutionContext) -> tuple[StepResult, ...]:
         state = PipelineState(
-            completed=list(self.initial_state.completed),
+            completed=[
+                sid
+                for sid in self.initial_state.completed
+                if sid not in _NON_RESUMABLE_STEP_IDS
+            ],
             last_error=self.initial_state.last_error,
         )
         results: list[StepResult] = []
@@ -49,7 +66,8 @@ class Pipeline:
                 self._persist(state)
                 raise
             results.append(result)
-            state.completed.append(step.id)
+            if step.id not in _NON_RESUMABLE_STEP_IDS:
+                state.completed.append(step.id)
             state.last_error = None
             self._persist(state)
         return tuple(results)

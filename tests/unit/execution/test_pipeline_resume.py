@@ -62,6 +62,62 @@ def test_pipeline_records_failure_and_reraises(tmp_path: Path) -> None:
     assert "b" in state.last_error
 
 
+def test_pipeline_never_marks_runtime_guards_completed(tmp_path: Path) -> None:
+    state_path = tmp_path / "state.json"
+    pipeline = Pipeline(
+        steps=(
+            _RecordingStep("disk-busy-guard"),
+            _RecordingStep("runtime-network-bootstrap"),
+            _RecordingStep("runtime-preflight"),
+            _RecordingStep("partitioning"),
+        ),
+        state_path=state_path,
+    )
+    pipeline.run(_ctx())
+    state = PipelineState.read(state_path)
+    # Only resumable steps are persisted.
+    assert state.completed == ["partitioning"]
+
+
+def test_pipeline_resume_strips_runtime_guards_from_initial_state(tmp_path: Path) -> None:
+    """A stale state file containing runtime guard IDs must NOT cause those
+    guards to be skipped on resume."""
+
+    state_path = tmp_path / "state.json"
+    seen: list[str] = []
+
+    @dataclass(frozen=True, slots=True)
+    class _Spy:
+        id: str
+        title: str = ""
+        destructive: bool = False
+
+        def execute(self, ctx: ExecutionContext) -> StepResult:
+            seen.append(self.id)
+            del ctx
+            return StepResult(
+                step_id=self.id, status=StepStatus.SUCCEEDED, commands=(),
+            )
+
+    initial = PipelineState(
+        completed=["disk-busy-guard", "runtime-preflight", "partitioning"],
+    )
+    initial.write(state_path)
+    pipeline = Pipeline(
+        steps=(
+            _Spy("disk-busy-guard"),
+            _Spy("runtime-preflight"),
+            _Spy("partitioning"),
+            _Spy("filesystems"),
+        ),
+        state_path=state_path,
+        initial_state=initial,
+    )
+    pipeline.run(_ctx())
+    # Guards re-run; partitioning skipped (already completed); filesystems runs.
+    assert seen == ["disk-busy-guard", "runtime-preflight", "filesystems"]
+
+
 def test_pipeline_resume_skips_completed_steps(tmp_path: Path) -> None:
     state_path = tmp_path / "state.json"
     PipelineState(completed=["a", "b"]).write(state_path)

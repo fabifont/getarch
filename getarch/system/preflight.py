@@ -42,7 +42,7 @@ def preflight_environment(
     iso: IsoProvider,
     network: NetworkProvider,
 ) -> EnvironmentReport:
-    _assert_host(identity, iso, firmware, network, pacman)
+    is_uefi = _assert_host(cfg, identity, iso, firmware, network, pacman)
     paths, mounts = _assert_disk(cfg, block_devices)
     _assert_locale(cfg, environment)
     _assert_packages(cfg, pacman)
@@ -53,7 +53,7 @@ def preflight_environment(
     return EnvironmentReport(
         disks_found=paths,
         cpu_vendor=environment.cpu_vendor(),
-        is_uefi=True,
+        is_uefi=is_uefi,
         is_root=True,
         is_arch_iso=True,
         internet_reachable=True,
@@ -63,12 +63,13 @@ def preflight_environment(
 
 
 def _assert_host(
+    cfg: Config,
     identity: IdentityProvider,
     iso: IsoProvider,
     firmware: FirmwareProvider,
     network: NetworkProvider,
     pacman: PacmanProvider,
-) -> None:
+) -> bool:
     if not identity.is_root():
         raise _EnvErr("getarch must run as root (effective uid != 0)")
 
@@ -78,19 +79,29 @@ def _assert_host(
             "(ID=arch + IMAGE_ID required)",
         )
 
-    if not firmware.is_uefi():
-        raise _EnvErr("system is not booted in UEFI mode (efivars not available)")
-
-    if not network.internet_reachable(INTERNET_REACHABILITY_HOST):
+    is_uefi = firmware.is_uefi()
+    if cfg.firmware == "uefi" and not is_uefi:
         raise _EnvErr(
-            f"no internet: cannot resolve {INTERNET_REACHABILITY_HOST}",
+            "firmware='uefi' but the host is not booted in UEFI mode "
+            "(efivars not available); set firmware='bios' or boot via UEFI",
         )
 
-    if not pacman.keyring_initialized():
-        raise _EnvErr(
-            "pacman keyring is not initialised; run pacman-key --init && "
-            "pacman-key --populate archlinux",
-        )
+    # When the user has declared a network bootstrap step we expect the
+    # pipeline to bring networking up *after* this preflight, so skipping
+    # the reachability+keyring checks here is correct: the runtime
+    # preflight step still re-fetches archlinux-keyring before pacstrap.
+    bootstrap_will_run = cfg.network.bootstrap is not None
+    if not bootstrap_will_run:
+        if not network.internet_reachable(INTERNET_REACHABILITY_HOST):
+            raise _EnvErr(
+                f"no internet: cannot resolve {INTERNET_REACHABILITY_HOST}",
+            )
+        if not pacman.keyring_initialized():
+            raise _EnvErr(
+                "pacman keyring is not initialised; run pacman-key --init && "
+                "pacman-key --populate archlinux",
+            )
+    return is_uefi
 
 
 def _assert_disk(
@@ -120,6 +131,12 @@ def _assert_locale(cfg: Config, environment: EnvironmentProvider) -> None:
 
 
 def _assert_packages(cfg: Config, pacman: PacmanProvider) -> None:
+    if cfg.repositories.multilib or cfg.repositories.extra:
+        # The repositories step mutates the live ISO's pacman.conf during
+        # the pipeline run; preflight queries the unmutated config so we
+        # can't accurately verify packages from those repos here. Skip
+        # validation rather than reject legitimate configs.
+        return
     for pkg in cfg.packages:
         if not pacman.package_exists(pkg):
             raise _EnvErr(f"package {pkg!r} not found in pacman repos")
