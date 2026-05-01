@@ -17,9 +17,11 @@ class _BD:
         self,
         disks: tuple[Disk, ...],
         mounts: tuple[str, ...] = (),
+        filesystems: tuple[tuple[str, str], ...] = (),
     ) -> None:
         self._d = disks
         self._m = mounts
+        self._f = filesystems
 
     def list_disks(self) -> tuple[Disk, ...]:
         return self._d
@@ -27,6 +29,10 @@ class _BD:
     def target_disk_busy(self, path: str) -> tuple[str, ...]:
         del path
         return self._m
+
+    def target_disk_filesystems(self, path: str) -> tuple[tuple[str, str], ...]:
+        del path
+        return self._f
 
 
 class _Env:

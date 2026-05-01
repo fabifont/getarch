@@ -32,6 +32,7 @@ class EnvironmentReport:
     internet_reachable: bool
     keyring_initialized: bool
     mountpoints_seen: tuple[str, ...]
+    existing_filesystems_seen: tuple[tuple[str, str], ...] = ()
 
 
 def preflight_environment(
@@ -51,6 +52,7 @@ def preflight_environment(
     _assert_mirrors(cfg)
     _assert_encryption(cfg)
     _assert_mountpoints(cfg)
+    existing_fs = block_devices.target_disk_filesystems(cfg.disk.path)
 
     return EnvironmentReport(
         disks_found=paths,
@@ -61,6 +63,7 @@ def preflight_environment(
         internet_reachable=True,
         keyring_initialized=True,
         mountpoints_seen=mounts,
+        existing_filesystems_seen=existing_fs,
     )
 
 

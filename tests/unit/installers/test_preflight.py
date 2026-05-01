@@ -32,6 +32,10 @@ class _FakeBlockDevices:
         del path
         return self._m
 
+    def target_disk_filesystems(self, path: str) -> tuple[tuple[str, str], ...]:
+        del path
+        return ()
+
 
 def test_disk_busy_guard_passes_when_clean() -> None:
     step = DiskBusyGuardStep(

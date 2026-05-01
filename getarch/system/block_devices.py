@@ -61,3 +61,24 @@ class LsblkBlockDevices:
                 if mp:
                     sink.append(mp)
             LsblkBlockDevices._collect_mounts(entry.get("children", []), sink)
+
+    def target_disk_filesystems(self, path: str) -> tuple[tuple[str, str], ...]:
+        result = self.runner.run(
+            Command(argv=("lsblk", "-J", "-o", "NAME,FSTYPE", path)),
+        )
+        try:
+            data: Any = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise DiscoveryError(f"lsblk output is not JSON: {exc}") from exc
+        out: list[tuple[str, str]] = []
+        self._collect_fstypes(data.get("blockdevices", []), out)
+        return tuple(out)
+
+    @staticmethod
+    def _collect_fstypes(entries: Any, sink: list[tuple[str, str]]) -> None:
+        for entry in entries or ():
+            fstype = entry.get("fstype")
+            name = entry.get("name")
+            if fstype and name:
+                sink.append((str(name), str(fstype)))
+            LsblkBlockDevices._collect_fstypes(entry.get("children", []), sink)

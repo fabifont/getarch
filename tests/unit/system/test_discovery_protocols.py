@@ -17,6 +17,10 @@ class _BD:
         del path
         return ()
 
+    def target_disk_filesystems(self, path: str) -> tuple[tuple[str, str], ...]:
+        del path
+        return ()
+
 
 class _Env:
     def cpu_vendor(self) -> str | None:

@@ -79,3 +79,25 @@ def test_no_mounts_summary_keeps_existing_prompt() -> None:
     require_destructive_confirmation(_plan(), assume_yes=False, force=False, prompt=prompt)
     assert captured
     assert "/mnt/data" not in captured[0]
+
+
+def test_existing_filesystems_surfaced_in_prompt() -> None:
+    captured: list[str] = []
+
+    def prompt(text: str) -> bool:
+        captured.append(text)
+        return True
+
+    require_destructive_confirmation(
+        _plan(),
+        assume_yes=False,
+        force=False,
+        prompt=prompt,
+        existing_filesystems=(("sda1", "vfat"), ("sda2", "btrfs")),
+    )
+    assert captured
+    text = captured[0]
+    assert "sda1=vfat" in text
+    assert "sda2=btrfs" in text
+    # btrfs presence triggers the snapshots warning.
+    assert "snapper" in text.lower() or "subvolume" in text.lower()

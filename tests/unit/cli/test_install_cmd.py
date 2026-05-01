@@ -99,6 +99,12 @@ def test_skip_environment_preflight_does_not_bypass_disk_busy_guard(
             del path
             return ("/", "/boot")
 
+        def target_disk_filesystems(
+            self, path: str,
+        ) -> tuple[tuple[str, str], ...]:
+            del path
+            return ()
+
     mocker.patch(
         "getarch.cli.commands.install.LsblkBlockDevices",
         return_value=_Busy(),

@@ -249,6 +249,9 @@ def run(
             force=force,
             prompt=console.confirm,
             mounts_summary=report.mountpoints_seen if report else (),
+            existing_filesystems=(
+                report.existing_filesystems_seen if report else ()
+            ),
         )
         audit_runner = LoggingRunner(inner=_build_runner(dry_run=dry_run))
         initial_state = _resolve_initial_state(
