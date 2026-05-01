@@ -1,13 +1,112 @@
-name: qemu
+name: qemu-smoke
+
 on:
+  pull_request:
+  push:
+    branches: [main, dev]
   workflow_dispatch:
+    inputs:
+      reboot_check:
+        description: "Reboot the installed VM and verify it boots."
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
 
-# QEMU smoke test is gated to manual dispatch until the new schema and CLI are
-# wired in (Phase 8 of the rewrite plan rewires this workflow to install via
-# the new uv wheel instead of the legacy PyInstaller binary).
-
+# Self-hosted runner with KVM, OVMF, qemu-system-x86_64, qemu-img, and
+# python3.14 + uv preinstalled is required. The runner needs read access to
+# /dev/kvm; either run as a member of the kvm group or set the
+# `--device /dev/kvm` capability on its container.
 jobs:
-  noop:
+  build-zipapp:
     runs-on: ubuntu-latest
+    outputs:
+      zipapp-key: ${{ steps.upload.outputs.artifact-id }}
     steps:
-      - run: echo "QEMU smoke test is temporarily disabled; see Phase 8 of the rewrite plan."
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv python install 3.14
+      - run: uv sync --all-groups
+      - name: Build wheel + sdist
+        run: uv build
+      - name: Build zipapp
+        run: |
+          uv run --with shiv shiv -c getarch -o dist/getarch.pyz .
+          chmod +x dist/getarch.pyz
+      - name: Upload zipapp
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: getarch-zipapp
+          path: dist/getarch.pyz
+
+  smoke:
+    needs: build-zipapp
+    runs-on: [self-hosted, kvm]
+    strategy:
+      fail-fast: false
+      matrix:
+        fs: [ext4, btrfs, xfs, f2fs]
+        bootloader: [systemd-boot, grub, uki]
+    timeout-minutes: 60
+    env:
+      ARCH_ISO_URL: https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso
+      OVMF_CODE: /usr/share/edk2/x64/OVMF_CODE.4m.fd
+      OVMF_VARS_TEMPLATE: /usr/share/edk2/x64/OVMF_VARS.4m.fd
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: getarch-zipapp
+          path: dist
+      - run: chmod +x dist/getarch.pyz
+      - name: Cache Arch ISO
+        id: iso-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/getarch-qemu/archlinux.iso
+          # Cache key changes monthly so we pick up a fresh ISO without
+          # exploding cache entries on every push.
+          key: archiso-${{ runner.os }}-${{ github.run_number }}-monthly
+          restore-keys: archiso-${{ runner.os }}-
+      - name: Download Arch ISO if not cached
+        if: steps.iso-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.cache/getarch-qemu
+          curl -fL "$ARCH_ISO_URL" -o ~/.cache/getarch-qemu/archlinux.iso
+      - name: Stage matrix workspace
+        run: |
+          set -eux
+          ws="$RUNNER_TEMP/qemu-${{ matrix.fs }}-${{ matrix.bootloader }}"
+          rm -rf "$ws"
+          mkdir -p "$ws"
+          # Per-VM OVMF NVRAM so concurrent matrix cells do not clobber each other.
+          cp "$OVMF_VARS_TEMPLATE" "$ws/OVMF_VARS.fd"
+          # Generate the matrix-specific config.
+          uv run python test_resources/qemu_configs.py \
+              ${{ matrix.fs }} ${{ matrix.bootloader }} > "$ws/config.json"
+      - name: Run QEMU smoke test
+        env:
+          QEMU_SMOKE_LOG_DIR: ${{ runner.temp }}/logs/${{ matrix.fs }}-${{ matrix.bootloader }}
+        run: |
+          ws="$RUNNER_TEMP/qemu-${{ matrix.fs }}-${{ matrix.bootloader }}"
+          mkdir -p "$QEMU_SMOKE_LOG_DIR"
+          uv run python test_resources/qemu_smoke.py \
+              --iso ~/.cache/getarch-qemu/archlinux.iso \
+              --ovmf-code "$OVMF_CODE" \
+              --ovmf-vars "$ws/OVMF_VARS.fd" \
+              --workspace "$ws" \
+              --config "$ws/config.json" \
+              --zipapp dist/getarch.pyz \
+              --reboot-check
+      - name: Upload artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-${{ matrix.fs }}-${{ matrix.bootloader }}
+          path: ${{ runner.temp }}/logs/${{ matrix.fs }}-${{ matrix.bootloader }}
+          if-no-files-found: warn
