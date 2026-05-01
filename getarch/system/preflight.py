@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -144,15 +146,62 @@ def _assert_packages(cfg: Config, pacman: PacmanProvider) -> None:
             raise _EnvErr(f"package {pkg!r} not found in pacman repos")
 
 
+_MIRROR_PROBE_TIMEOUT_SECONDS = 10
+_MIRROR_PROBE_PATH = "core/os/x86_64/core.db"
+_HTTP_BAD_STATUS = 400
+
+
 def _assert_mirrors(cfg: Config) -> None:
     if cfg.mirrors.strategy != "static":
         return
     if not cfg.mirrors.static_path:
         return
-    if not Path(cfg.mirrors.static_path).is_file():
+    static_path = Path(cfg.mirrors.static_path)
+    if not static_path.is_file():
         raise _EnvErr(
             f"static mirrorlist not found: {cfg.mirrors.static_path}",
         )
+    _probe_first_mirror(static_path)
+
+
+def _probe_first_mirror(static_path: Path) -> None:
+    base_url = _first_mirror_base_url(static_path)
+    if base_url is None:
+        # Mirrorlist with only commented lines — nothing to probe.
+        return
+    probe_url = f"{base_url.rstrip('/')}/{_MIRROR_PROBE_PATH}"
+    request = urllib.request.Request(probe_url, method="HEAD")  # noqa: S310
+    try:
+        with urllib.request.urlopen(  # noqa: S310
+            request, timeout=_MIRROR_PROBE_TIMEOUT_SECONDS,
+        ) as response:
+            status = response.status
+    except (urllib.error.URLError, OSError, TimeoutError) as exc:
+        raise _EnvErr(
+            f"first mirror in {static_path} unreachable ({probe_url}): {exc}",
+        ) from exc
+    if status >= _HTTP_BAD_STATUS:
+        raise _EnvErr(
+            f"first mirror in {static_path} responded {status} for {probe_url}",
+        )
+
+
+def _first_mirror_base_url(static_path: Path) -> str | None:
+    for raw in static_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if not line.lower().startswith("server"):
+            continue
+        _, _, value = line.partition("=")
+        url = value.strip()
+        # Mirror lines use $repo / $arch placeholders; strip everything
+        # from the first '$' onward to get the base URL.
+        idx = url.find("$")
+        if idx > 0:
+            url = url[:idx]
+        return url.rstrip("/")
+    return None
 
 
 def _assert_encryption(cfg: Config) -> None:

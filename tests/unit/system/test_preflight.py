@@ -1,3 +1,5 @@
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -209,6 +211,80 @@ def test_detached_luks_header_rejected_at_schema_time() -> None:
     }
     with pytest.raises(ValidationError, match="header_path"):
         Config.model_validate(cfg_dict)
+
+
+def test_preflight_probes_first_mirror_and_passes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mirrorlist = tmp_path / "mirrorlist"
+    mirrorlist.write_text("Server = https://mirror.example.com/$repo/os/$arch\n")
+    cfg_dict = dict(EXAMPLES["minimal-ext4"])
+    cfg_dict["mirrors"] = {
+        "strategy": "static",
+        "static_path": str(mirrorlist),
+    }
+    cfg = Config.model_validate(cfg_dict)
+
+    captured: list[str] = []
+
+    class _FakeResponse:
+        status = 200
+
+        def __enter__(self) -> _FakeResponse:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            del _args
+
+    def fake_urlopen(req: object, timeout: int = 10) -> _FakeResponse:
+        del timeout
+        captured.append(getattr(req, "full_url", ""))
+        return _FakeResponse()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    preflight_environment(
+        cfg,
+        _BD(_disks()),
+        _Env(),
+        _Fw(),
+        _Pac(),
+        _Identity(),
+        _Iso(),
+        _Net(),
+    )
+    assert captured == ["https://mirror.example.com/core/os/x86_64/core.db"]
+
+
+def test_preflight_fails_when_first_mirror_unreachable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mirrorlist = tmp_path / "mirrorlist"
+    mirrorlist.write_text("Server = https://broken.example.com/$repo/os/$arch\n")
+    cfg_dict = dict(EXAMPLES["minimal-ext4"])
+    cfg_dict["mirrors"] = {
+        "strategy": "static",
+        "static_path": str(mirrorlist),
+    }
+    cfg = Config.model_validate(cfg_dict)
+
+    def fake_urlopen(*_args: object, **_kwargs: object) -> object:
+        del _args, _kwargs
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(EnvErr, match="unreachable"):
+        preflight_environment(
+            cfg,
+            _BD(_disks()),
+            _Env(),
+            _Fw(),
+            _Pac(),
+            _Identity(),
+            _Iso(),
+            _Net(),
+        )
 
 
 def test_preflight_fails_when_static_mirrorlist_missing() -> None:
