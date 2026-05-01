@@ -242,6 +242,23 @@ class BootloaderConfig(_Frozen):
     extra_kernel_params: list[str] = Field(default_factory=list)
 
 
+class KdumpConfig(_Frozen):
+    """Kernel crash-dump (kdump) configuration.
+
+    Adds ``crashkernel=<value>`` to the bootloader cmdline and enables
+    ``kdump.service`` so kexec captures a vmcore on panic. Requires a
+    bootloader strategy that lets us mutate the cmdline (systemd-boot
+    or GRUB); UKI is rejected because the cmdline is baked into the
+    EFI image.
+    """
+
+    enable: bool = False
+    crashkernel: str = Field(
+        default="256M,high",
+        pattern=r"^[0-9]+[KkMmGg](,[a-z]+)?$",
+    )
+
+
 class InitramfsConfig(_Frozen):
     generator: Literal["mkinitcpio", "dracut"] = "mkinitcpio"
     hooks: list[str] = Field(default_factory=list)
@@ -462,6 +479,7 @@ class Config(_Frozen):
     users: UsersConfig
     mountpoints: list[MountpointConfig] = Field(default_factory=list)
     repositories: RepositoriesConfig = Field(default_factory=RepositoriesConfig)
+    kdump: KdumpConfig = Field(default_factory=KdumpConfig)
     reboot: bool = False
 
     @field_validator("packages")

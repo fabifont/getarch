@@ -22,6 +22,7 @@ def validate_semantics(cfg: Config) -> None:
     _check_mountpoints(cfg)
     _check_detached_header(cfg)
     _check_lvm_layout(cfg)
+    _check_kdump(cfg)
 
 
 def _check_kernel_in_packages(cfg: Config) -> None:
@@ -224,6 +225,23 @@ def _check_lvm_layout(cfg: Config) -> None:
         raise SemanticConfigError(
             "partitioning.lvm needs the following filesystem packages in "
             f"packages: {sorted(missing)}",
+        )
+
+
+def _check_kdump(cfg: Config) -> None:
+    if not cfg.kdump.enable:
+        return
+    if cfg.bootloader.kind == "uki":
+        raise SemanticConfigError(
+            "kdump.enable is not supported with bootloader.kind='uki' "
+            "(the cmdline is baked into the EFI image; rebuilding the UKI "
+            "every time crashkernel changes is invasive). Use systemd-boot "
+            "or grub instead.",
+        )
+    if cfg.firmware == "container":
+        raise SemanticConfigError(
+            "kdump.enable cannot be configured in firmware='container' "
+            "(no bootloader to attach the crashkernel cmdline to)",
         )
 
 

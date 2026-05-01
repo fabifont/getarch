@@ -620,6 +620,12 @@ class Planner:
             # the lvm2 userspace tools. Auto-add so the install doesn't
             # silently produce an unbootable system when the user forgets.
             pkgs.append("lvm2")
+        if cfg.kdump.enable and "kexec-tools" not in pkgs:
+            # kdump needs kexec-tools for the kexec syscall + kdump-tools
+            # systemd unit. We auto-add the userspace package so a stale
+            # `crashkernel=` cmdline can never silently degrade to
+            # "reserved memory but no captor".
+            pkgs.append("kexec-tools")
         return PlannedStep(
             id="packages",
             title="Pacstrap base packages",
@@ -755,11 +761,20 @@ class Planner:
         disk: Disk,
     ) -> PlannedStep:
         rootflags = "rootflags=subvol=@" if cfg.filesystem.kind == "btrfs" else None
+        # kdump appends crashkernel=<value> to the bootloader cmdline.
+        # Concat with the user's extra_kernel_params so the user can
+        # still override the value by listing crashkernel= themselves
+        # later (last write wins for the kernel).
+        params = list(cfg.bootloader.extra_kernel_params)
+        if cfg.kdump.enable and not any(
+            p.startswith("crashkernel=") for p in params
+        ):
+            params.append(f"crashkernel={cfg.kdump.crashkernel}")
         bl_spec = BootloaderSpec(
             kind=BootloaderKind(cfg.bootloader.kind),
             entry_id=cfg.bootloader.entry_id,
             timeout_seconds=cfg.bootloader.timeout_seconds,
-            extra_kernel_params=tuple(cfg.bootloader.extra_kernel_params),
+            extra_kernel_params=tuple(params),
         )
         encryption_spec = EncryptionSpec(
             kind=EncryptionKind.LUKS2 if encrypted else EncryptionKind.NONE,
@@ -830,6 +845,8 @@ class Planner:
                     timers.append(unit)
         if cfg.network.firewall_nftables_rules and "nftables" not in enable:
             enable.append("nftables")
+        if cfg.kdump.enable and "kdump.service" not in enable:
+            enable.append("kdump.service")
         svc_cmds = tuple(
             Command(
                 argv=("systemctl", "enable", svc),
