@@ -27,6 +27,8 @@ def test_diff_different_configs_emits_unified_diff(tmp_path: Path) -> None:
     result = CliRunner().invoke(app, ["--no-color", "diff", str(a), str(b)])
     assert result.exit_code == 0
     out = result.output
-    assert "---" in out and "+++" in out
+    assert "---" in out
+    assert "+++" in out
     # Encryption is unique to the btrfs config.
-    assert "encryption" in out.lower() or "luks" in out.lower()
+    lowered = out.lower()
+    assert "encryption" in lowered or "luks" in lowered

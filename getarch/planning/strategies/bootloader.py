@@ -313,6 +313,89 @@ class UkiStrategy:
         return " ".join(params)
 
 
+@dataclass(frozen=True, slots=True)
+class GrubBiosStrategy:
+    """GRUB on a non-UEFI (BIOS / legacy) target.
+
+    Installs GRUB stage 1/1.5 to the MBR + BIOS-boot partition with
+    ``grub-install --target=i386-pc <disk>``. Cmdline assembly mirrors
+    :class:`GrubStrategy`.
+    """
+
+    spec: BootloaderSpec
+    kernel: KernelSpec
+    microcode: MicrocodeKind
+    encryption: EncryptionSpec
+    rootflags: str | None
+    crypt_partition_path: str
+    mount_root: Path
+    install_disk: str
+
+    def commands(self) -> tuple[Command, ...]:
+        defaults_path = self.mount_root / "etc/default/grub"
+        cmdline = self._cmdline()
+        defaults_text = (
+            f'GRUB_DEFAULT=0\n'
+            f'GRUB_TIMEOUT={self.spec.timeout_seconds}\n'
+            f'GRUB_DISTRIBUTOR="Arch"\n'
+            f'GRUB_CMDLINE_LINUX_DEFAULT="{cmdline}"\n'
+            f'GRUB_PRELOAD_MODULES="part_gpt part_msdos"\n'
+        )
+        cmds: list[Command] = [
+            Command(
+                argv=("install", "-Dm644", "/dev/stdin", str(defaults_path)),
+                input=defaults_text,
+                description=f"write {defaults_path}",
+            ),
+            Command(
+                argv=(
+                    "grub-install",
+                    "--target=i386-pc",
+                    self.install_disk,
+                ),
+                chroot=True,
+                description=f"install GRUB BIOS stage to {self.install_disk}",
+            ),
+        ]
+        if self.encryption.kind is EncryptionKind.LUKS2:
+            cmds.append(
+                Command(
+                    argv=(
+                        "sh",
+                        "-c",
+                        (
+                            f"printf 'GRUB_ENABLE_CRYPTODISK=y\\n' "
+                            f">> {defaults_path}"
+                        ),
+                    ),
+                    description="enable cryptodisk in /etc/default/grub",
+                ),
+            )
+        cmds.append(
+            Command(
+                argv=("grub-mkconfig", "-o", "/boot/grub/grub.cfg"),
+                chroot=True,
+                description="render /boot/grub/grub.cfg",
+            ),
+        )
+        return tuple(cmds)
+
+    def _cmdline(self) -> str:
+        params: list[str] = []
+        if self.encryption.kind is EncryptionKind.LUKS2:
+            params.append(
+                f"cryptdevice={self.crypt_partition_path}:{self.encryption.mapper_name}",
+            )
+            params.append(f"root=/dev/mapper/{self.encryption.mapper_name}")
+        else:
+            params.append("root=LABEL=system")
+        if self.rootflags:
+            params.append(self.rootflags)
+        params.append("rw")
+        params.extend(self.spec.extra_kernel_params)
+        return " ".join(params)
+
+
 def build_bootloader_strategy(
     spec: BootloaderSpec,
     *,

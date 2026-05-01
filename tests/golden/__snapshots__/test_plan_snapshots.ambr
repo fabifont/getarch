@@ -10,7 +10,7 @@
         "title": "Partition disk",
         "phase": "partitioning",
         "destructive": true,
-        "description": "Create GPT layout 'efi-root' on /dev/sda",
+        "description": "Create GPT layout 'efi-root' (uefi) on /dev/sda",
         "commands": [
           {
             "argv": [
@@ -506,7 +506,7 @@
         "title": "Install bootloader",
         "phase": "bootloader",
         "destructive": false,
-        "description": "install systemd-boot bootloader",
+        "description": "install systemd-boot bootloader (uefi)",
         "commands": [
           {
             "argv": [
@@ -681,7 +681,7 @@
         "title": "Partition disk",
         "phase": "partitioning",
         "destructive": true,
-        "description": "Create GPT layout 'efi-swap-home-root' on /dev/sda",
+        "description": "Create GPT layout 'efi-swap-home-root' (uefi) on /dev/sda",
         "commands": [
           {
             "argv": [
@@ -1282,7 +1282,7 @@
         "title": "Install bootloader",
         "phase": "bootloader",
         "destructive": false,
-        "description": "install systemd-boot bootloader",
+        "description": "install systemd-boot bootloader (uefi)",
         "commands": [
           {
             "argv": [
@@ -1405,7 +1405,7 @@
         "title": "Partition disk",
         "phase": "partitioning",
         "destructive": true,
-        "description": "Create GPT layout 'efi-root' on /dev/sda",
+        "description": "Create GPT layout 'efi-root' (uefi) on /dev/sda",
         "commands": [
           {
             "argv": [
@@ -1748,7 +1748,7 @@
         "title": "Install bootloader",
         "phase": "bootloader",
         "destructive": false,
-        "description": "install systemd-boot bootloader",
+        "description": "install systemd-boot bootloader (uefi)",
         "commands": [
           {
             "argv": [

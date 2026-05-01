@@ -244,6 +244,7 @@ class MountpointConfig(_Frozen):
 
 class Config(_Frozen):
     version: Literal[1]
+    firmware: Literal["uefi", "bios"] = "uefi"
     disk: DiskConfig
     partitioning: PartitionLayout
     filesystem: FilesystemConfig

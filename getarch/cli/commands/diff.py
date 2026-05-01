@@ -14,17 +14,14 @@ from getarch.config.loader import load_config
 from getarch.config.semantic import validate_semantics
 from getarch.constants import DEFAULT_MOUNT_ROOT
 from getarch.domain.disk import Disk, DiskPath
+from getarch.domain.plan import InstallPlan
 from getarch.errors import GetarchError
 from getarch.planning.planner import Planner
 
 
-def _render_steps(planner_output: object) -> list[str]:
-    # Late import keeps the cli boot path lean.
-    from getarch.domain.plan import InstallPlan
-
-    assert isinstance(planner_output, InstallPlan)
+def _render_steps(plan: InstallPlan) -> list[str]:
     lines: list[str] = []
-    for step in planner_output.steps:
+    for step in plan.steps:
         flag = " (destructive)" if step.destructive else ""
         lines.append(f"# {step.id}{flag}: {step.title}")
         for cmd in step.commands:

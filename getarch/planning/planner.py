@@ -20,7 +20,10 @@ from getarch.domain.plan import InstallPlan, PlannedStep, StepPhase
 from getarch.domain.secret import Secret
 from getarch.errors import PlanError
 from getarch.execution.command import Command
-from getarch.planning.strategies.bootloader import build_bootloader_strategy
+from getarch.planning.strategies.bootloader import (
+    GrubBiosStrategy,
+    build_bootloader_strategy,
+)
 from getarch.planning.strategies.encryption import build_encryption_strategy
 from getarch.planning.strategies.filesystem import build_filesystem_strategy
 from getarch.planning.strategies.initramfs import build_initramfs_strategy
@@ -35,6 +38,7 @@ from getarch.planning.strategies.network import (
     NetworkdProfilePlan,
 )
 from getarch.planning.strategies.partitioning import SgdiskStrategy
+from getarch.planning.strategies.partitioning_bios import SgdiskBiosStrategy
 from getarch.planning.strategies.repositories import (
     RepositoriesStrategy,
     RepositoryEntry,
@@ -58,39 +62,76 @@ class Planner:
         encrypted = cfg.encryption.kind == "luks2"
         microcode = self._resolve_microcode(cfg, cpu_vendor)
         steps: list[PlannedStep] = []
+        self._extend_pre_disk(steps, cfg, mount_root)
+        self._extend_disk_phase(steps, cfg, disk, encrypted=encrypted, mount_root=mount_root)
+        self._extend_system_phase(
+            steps,
+            cfg,
+            mount_root,
+            disk=disk,
+            encrypted=encrypted,
+            microcode=microcode,
+        )
+        self._extend_finalisation(steps, cfg, mount_root)
+        try:
+            return InstallPlan(version=_PLAN_VERSION, steps=tuple(steps))
+        except ValueError as exc:
+            raise PlanError(f"plan invalid: {exc}") from exc
 
+    # --- build helpers ---------------------------------------------------
+
+    def _extend_pre_disk(
+        self,
+        steps: list[PlannedStep],
+        cfg: Config,
+        mount_root: Path,
+    ) -> None:
         # Mirror configuration runs before any destructive disk work so a
         # missing reflector binary or bad reflector_args fails fast (the
         # mirror step only writes to the live ISO mirrorlist anyway).
         mirror_step = self._mirror_step(cfg, mount_root)
         if mirror_step is not None:
             steps.append(mirror_step)
-
         repos_step = self._repositories_step(cfg)
         if repos_step is not None:
             steps.append(repos_step)
 
+    def _extend_disk_phase(
+        self,
+        steps: list[PlannedStep],
+        cfg: Config,
+        disk: Disk,
+        *,
+        encrypted: bool,
+        mount_root: Path,
+    ) -> None:
         steps.append(self._partitioning_step(cfg, disk, encrypted=encrypted))
         if encrypted:
             steps.append(self._encryption_step(cfg))
-
         root_partition = (
             f"/dev/mapper/{cfg.encryption.mapper_name}"
             if encrypted
             else "/dev/disk/by-partlabel/system"
         )
-        efi_partition = "/dev/disk/by-partlabel/EFI"
-        fs_steps = self._filesystem_steps(cfg, root_partition, efi_partition, mount_root)
-        steps.extend(fs_steps)
-
+        efi_partition = None if cfg.firmware == "bios" else "/dev/disk/by-partlabel/EFI"
+        steps.extend(self._filesystem_steps(cfg, root_partition, efi_partition, mount_root))
         swap_step = self._swap_step(cfg, mount_root)
         if swap_step is not None:
             steps.append(swap_step)
-
         custom_mounts_step = self._custom_mountpoints_step(cfg, mount_root)
         if custom_mounts_step is not None:
             steps.append(custom_mounts_step)
 
+    def _extend_system_phase(
+        self,
+        steps: list[PlannedStep],
+        cfg: Config,
+        mount_root: Path,
+        *,
+        disk: Disk,
+        encrypted: bool,
+        microcode: MicrocodeKind,
+    ) -> None:
         steps.append(self._packages_step(cfg, mount_root, microcode))
         steps.append(self._fstab_step(mount_root))
         steps.append(self._system_config_step(cfg, mount_root))
@@ -99,8 +140,21 @@ class Planner:
             steps.append(network_step)
         steps.append(self._initramfs_step(cfg, mount_root))
         steps.append(
-            self._bootloader_step(cfg, mount_root, encrypted=encrypted, microcode=microcode),
+            self._bootloader_step(
+                cfg,
+                mount_root,
+                encrypted=encrypted,
+                microcode=microcode,
+                disk=disk,
+            ),
         )
+
+    def _extend_finalisation(
+        self,
+        steps: list[PlannedStep],
+        cfg: Config,
+        mount_root: Path,
+    ) -> None:
         services_step = self._services_step(cfg)
         if services_step.commands:
             steps.append(services_step)
@@ -111,22 +165,24 @@ class Planner:
         if cfg.reboot:
             steps.append(self._reboot_step())
 
-        try:
-            return InstallPlan(version=_PLAN_VERSION, steps=tuple(steps))
-        except ValueError as exc:
-            raise PlanError(f"plan invalid: {exc}") from exc
-
     def _partitioning_step(self, cfg: Config, disk: Disk, *, encrypted: bool) -> PlannedStep:
+        if cfg.firmware == "bios":
+            commands = SgdiskBiosStrategy(
+                disk=disk, layout=cfg.partitioning, encrypted=encrypted
+            ).commands()
+        else:
+            commands = SgdiskStrategy(
+                disk=disk, layout=cfg.partitioning, encrypted=encrypted
+            ).commands()
         return PlannedStep(
             id="partitioning",
             title="Partition disk",
             phase=StepPhase.PARTITIONING,
-            commands=SgdiskStrategy(
-                disk=disk, layout=cfg.partitioning, encrypted=encrypted
-            ).commands(),
+            commands=commands,
             destructive=True,
             description=(
-                f"Create GPT layout {cfg.partitioning.layout!r} on {disk.path.as_posix()}"
+                f"Create GPT layout {cfg.partitioning.layout!r} "
+                f"({cfg.firmware}) on {disk.path.as_posix()}"
             ),
         )
 
@@ -152,7 +208,7 @@ class Planner:
         self,
         cfg: Config,
         root_partition: str,
-        efi_partition: str,
+        efi_partition: str | None,
         mount_root: Path,
     ) -> tuple[PlannedStep, PlannedStep]:
         has_home = "home" in cfg.partitioning.layout
@@ -283,6 +339,7 @@ class Planner:
         *,
         encrypted: bool,
         microcode: MicrocodeKind,
+        disk: Disk,
     ) -> PlannedStep:
         rootflags = "rootflags=subvol=@" if cfg.filesystem.kind == "btrfs" else None
         bl_spec = BootloaderSpec(
@@ -301,22 +358,34 @@ class Planner:
             fido2_unlock=cfg.encryption.fido2_unlock,
             header_path=cfg.encryption.header_path,
         )
-        strategy = build_bootloader_strategy(
-            bl_spec,
-            kernel=KernelSpec(kind=KernelKind(cfg.kernel.kind)),
-            microcode=microcode,
-            encryption=encryption_spec,
-            rootflags=rootflags,
-            crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
-            mount_root=mount_root,
-        )
+        if cfg.firmware == "bios":
+            strategy_cmds = GrubBiosStrategy(
+                spec=bl_spec,
+                kernel=KernelSpec(kind=KernelKind(cfg.kernel.kind)),
+                microcode=microcode,
+                encryption=encryption_spec,
+                rootflags=rootflags,
+                crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
+                mount_root=mount_root,
+                install_disk=disk.path.as_posix(),
+            ).commands()
+        else:
+            strategy_cmds = build_bootloader_strategy(
+                bl_spec,
+                kernel=KernelSpec(kind=KernelKind(cfg.kernel.kind)),
+                microcode=microcode,
+                encryption=encryption_spec,
+                rootflags=rootflags,
+                crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
+                mount_root=mount_root,
+            ).commands()
         return PlannedStep(
             id="bootloader",
             title="Install bootloader",
             phase=StepPhase.BOOTLOADER,
-            commands=strategy.commands(),
+            commands=strategy_cmds,
             destructive=False,
-            description=f"install {cfg.bootloader.kind} bootloader",
+            description=f"install {cfg.bootloader.kind} bootloader ({cfg.firmware})",
         )
 
     def _services_step(self, cfg: Config) -> PlannedStep:

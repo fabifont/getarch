@@ -13,21 +13,25 @@ from getarch.execution.command import Command
 class Ext4Strategy:
     spec: FilesystemSpec
     root_partition: str
-    efi_partition: str
+    efi_partition: str | None
     mount_root: Path
     home_partition: str | None = None
 
     def commands(self) -> tuple[Command, ...]:
-        cmds: list[Command] = [
-            Command(
-                argv=("mkfs.fat", "-F", "32", "-n", "EFI", self.efi_partition),
-                description="create FAT32 EFI filesystem",
-            ),
+        cmds: list[Command] = []
+        if self.efi_partition is not None:
+            cmds.append(
+                Command(
+                    argv=("mkfs.fat", "-F", "32", "-n", "EFI", self.efi_partition),
+                    description="create FAT32 EFI filesystem",
+                ),
+            )
+        cmds.append(
             Command(
                 argv=("mkfs.ext4", "-F", "-L", self.spec.label, self.root_partition),
                 description=f"create ext4 filesystem labeled {self.spec.label}",
             ),
-        ]
+        )
         if self.home_partition:
             cmds.append(
                 Command(
@@ -43,22 +47,29 @@ class Ext4Strategy:
                     ),
                 ),
             )
-        cmds.extend(
-            (
-                Command(
-                    argv=("mount", self.root_partition, str(self.mount_root)),
-                    description="mount root filesystem",
-                ),
-                Command(
-                    argv=("mkdir", "-p", str(self.mount_root / "boot")),
-                    description="create /boot mountpoint",
-                ),
-                Command(
-                    argv=("mount", self.efi_partition, str(self.mount_root / "boot")),
-                    description="mount EFI filesystem at /boot",
-                ),
+        cmds.append(
+            Command(
+                argv=("mount", self.root_partition, str(self.mount_root)),
+                description="mount root filesystem",
             ),
         )
+        if self.efi_partition is not None:
+            cmds.extend(
+                (
+                    Command(
+                        argv=("mkdir", "-p", str(self.mount_root / "boot")),
+                        description="create /boot mountpoint",
+                    ),
+                    Command(
+                        argv=(
+                            "mount",
+                            self.efi_partition,
+                            str(self.mount_root / "boot"),
+                        ),
+                        description="mount EFI filesystem at /boot",
+                    ),
+                ),
+            )
         if self.home_partition:
             cmds.extend(
                 (
@@ -79,21 +90,25 @@ class Ext4Strategy:
 class BtrfsStrategy:
     spec: FilesystemSpec
     root_partition: str
-    efi_partition: str
+    efi_partition: str | None
     mount_root: Path
     home_partition: str | None = None
 
     def commands(self) -> tuple[Command, ...]:
-        cmds: list[Command] = [
-            Command(
-                argv=("mkfs.fat", "-F", "32", "-n", "EFI", self.efi_partition),
-                description="create FAT32 EFI filesystem",
-            ),
+        cmds: list[Command] = []
+        if self.efi_partition is not None:
+            cmds.append(
+                Command(
+                    argv=("mkfs.fat", "-F", "32", "-n", "EFI", self.efi_partition),
+                    description="create FAT32 EFI filesystem",
+                ),
+            )
+        cmds.append(
             Command(
                 argv=("mkfs.btrfs", "-f", "-L", self.spec.label, self.root_partition),
                 description="create btrfs root filesystem",
             ),
-        ]
+        )
         if self.home_partition:
             cmds.append(
                 Command(
@@ -158,18 +173,19 @@ class BtrfsStrategy:
                     description=f"mount subvolume {sv.name} at {target}",
                 ),
             )
-        cmds.append(
-            Command(
-                argv=("mkdir", "-p", str(self.mount_root / "boot")),
-                description="create /boot mountpoint",
-            ),
-        )
-        cmds.append(
-            Command(
-                argv=("mount", self.efi_partition, str(self.mount_root / "boot")),
-                description="mount EFI at /boot",
-            ),
-        )
+        if self.efi_partition is not None:
+            cmds.append(
+                Command(
+                    argv=("mkdir", "-p", str(self.mount_root / "boot")),
+                    description="create /boot mountpoint",
+                ),
+            )
+            cmds.append(
+                Command(
+                    argv=("mount", self.efi_partition, str(self.mount_root / "boot")),
+                    description="mount EFI at /boot",
+                ),
+            )
         if self.home_partition:
             cmds.append(
                 Command(
@@ -192,7 +208,7 @@ class _SimpleMkfsStrategy:
 
     spec: FilesystemSpec
     root_partition: str
-    efi_partition: str
+    efi_partition: str | None
     mount_root: Path
     home_partition: str | None
     mkfs_argv: tuple[str, ...]
@@ -200,11 +216,15 @@ class _SimpleMkfsStrategy:
     label_flag: str = "-L"
 
     def commands(self) -> tuple[Command, ...]:
-        cmds: list[Command] = [
-            Command(
-                argv=("mkfs.fat", "-F", "32", "-n", "EFI", self.efi_partition),
-                description="create FAT32 EFI filesystem",
-            ),
+        cmds: list[Command] = []
+        if self.efi_partition is not None:
+            cmds.append(
+                Command(
+                    argv=("mkfs.fat", "-F", "32", "-n", "EFI", self.efi_partition),
+                    description="create FAT32 EFI filesystem",
+                ),
+            )
+        cmds.append(
             Command(
                 argv=(
                     *self.mkfs_argv,
@@ -216,7 +236,7 @@ class _SimpleMkfsStrategy:
                     f"create {self.description_label} filesystem labeled {self.spec.label}"
                 ),
             ),
-        ]
+        )
         if self.home_partition:
             cmds.append(
                 Command(
@@ -232,22 +252,29 @@ class _SimpleMkfsStrategy:
                     ),
                 ),
             )
-        cmds.extend(
-            (
-                Command(
-                    argv=("mount", self.root_partition, str(self.mount_root)),
-                    description="mount root filesystem",
-                ),
-                Command(
-                    argv=("mkdir", "-p", str(self.mount_root / "boot")),
-                    description="create /boot mountpoint",
-                ),
-                Command(
-                    argv=("mount", self.efi_partition, str(self.mount_root / "boot")),
-                    description="mount EFI filesystem at /boot",
-                ),
+        cmds.append(
+            Command(
+                argv=("mount", self.root_partition, str(self.mount_root)),
+                description="mount root filesystem",
             ),
         )
+        if self.efi_partition is not None:
+            cmds.extend(
+                (
+                    Command(
+                        argv=("mkdir", "-p", str(self.mount_root / "boot")),
+                        description="create /boot mountpoint",
+                    ),
+                    Command(
+                        argv=(
+                            "mount",
+                            self.efi_partition,
+                            str(self.mount_root / "boot"),
+                        ),
+                        description="mount EFI filesystem at /boot",
+                    ),
+                ),
+            )
         if self.home_partition:
             cmds.extend(
                 (
@@ -268,7 +295,7 @@ def _xfs_strategy(
     spec: FilesystemSpec,
     *,
     root_partition: str,
-    efi_partition: str,
+    efi_partition: str | None,
     mount_root: Path,
     home_partition: str | None,
 ) -> _SimpleMkfsStrategy:
@@ -287,7 +314,7 @@ def _f2fs_strategy(
     spec: FilesystemSpec,
     *,
     root_partition: str,
-    efi_partition: str,
+    efi_partition: str | None,
     mount_root: Path,
     home_partition: str | None,
 ) -> _SimpleMkfsStrategy:
@@ -308,7 +335,7 @@ def build_filesystem_strategy(
     spec: FilesystemSpec,
     *,
     root_partition: str,
-    efi_partition: str,
+    efi_partition: str | None,
     mount_root: Path,
     home_partition: str | None = None,
 ) -> Ext4Strategy | BtrfsStrategy | _SimpleMkfsStrategy:

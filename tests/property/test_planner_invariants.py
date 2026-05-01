@@ -135,7 +135,8 @@ def test_planner_invariants(combo: dict[str, object]) -> None:
     for step in plan.steps:
         for cmd in step.commands:
             assert cmd.argv, f"empty argv in {step.id}"
-            assert isinstance(cmd.argv[0], str) and cmd.argv[0]
+            assert isinstance(cmd.argv[0], str)
+            assert cmd.argv[0]
 
     # Invariant 4: phase order is monotonically non-decreasing on the
     # phase enum's declaration order.

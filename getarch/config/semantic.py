@@ -16,6 +16,7 @@ def validate_semantics(cfg: Config) -> None:
     _check_home_layout(cfg)
     _check_luks_home_incompatible(cfg)
     _check_mountpoints(cfg)
+    _check_firmware_bootloader(cfg)
 
 
 def _check_kernel_in_packages(cfg: Config) -> None:
@@ -117,3 +118,11 @@ def _check_mountpoints(cfg: Config) -> None:
             raise SemanticConfigError(f"duplicate mountpoint {mp.mountpoint!r}")
         seen_labels.add(mp.partition_label)
         seen_mounts.add(mp.mountpoint)
+
+
+def _check_firmware_bootloader(cfg: Config) -> None:
+    if cfg.firmware == "bios" and cfg.bootloader.kind != "grub":
+        raise SemanticConfigError(
+            f"firmware='bios' requires bootloader.kind='grub'; got "
+            f"{cfg.bootloader.kind!r}",
+        )
