@@ -40,6 +40,7 @@ class FilesystemConfig(_Frozen):
     label: str = "system"
     mount_options: list[str] = Field(default_factory=list)
     subvolumes: list[BtrfsSubvolumeConfig] = Field(default_factory=list)
+    snapper: bool = False
 
     @model_validator(mode="after")
     def _btrfs_defaults(self) -> FilesystemConfig:
@@ -47,6 +48,8 @@ class FilesystemConfig(_Frozen):
             object.__setattr__(self, "subvolumes", list(_DEFAULT_BTRFS_SUBVOLS))
         if self.kind != "btrfs" and self.subvolumes:
             raise ValueError("subvolumes only valid for btrfs")
+        if self.snapper and self.kind != "btrfs":
+            raise ValueError("snapper requires filesystem.kind='btrfs'")
         return self
 
 

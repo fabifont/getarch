@@ -39,6 +39,7 @@ from getarch.planning.strategies.repositories import (
     RepositoriesStrategy,
     RepositoryEntry,
 )
+from getarch.planning.strategies.snapper import SnapperStrategy
 from getarch.planning.strategies.swap import SwapfileStrategy, ZramStrategy
 
 _PLAN_VERSION = "1"
@@ -104,6 +105,8 @@ class Planner:
         if services_step.commands:
             steps.append(services_step)
         steps.append(self._users_step(cfg))
+        if cfg.filesystem.snapper:
+            steps.append(self._snapper_step())
         steps.append(self._cleanup_step(cfg, mount_root))
         if cfg.reboot:
             steps.append(self._reboot_step())
@@ -198,6 +201,8 @@ class Planner:
             pkgs.append("iwd")
         if cfg.swap.kind == "zram" and "zram-generator" not in pkgs:
             pkgs.append("zram-generator")
+        if cfg.filesystem.snapper and "snapper" not in pkgs:
+            pkgs.append("snapper")
         return PlannedStep(
             id="packages",
             title="Pacstrap base packages",
@@ -324,6 +329,10 @@ class Planner:
                     enable.append(svc)
         elif cfg.network.backend == "iwd" and "iwd" not in enable:
             enable.append("iwd")
+        if cfg.filesystem.snapper:
+            for unit in ("snapper-timeline.timer", "snapper-cleanup.timer"):
+                if unit not in timers and unit not in enable:
+                    timers.append(unit)
         svc_cmds = tuple(
             Command(
                 argv=("systemctl", "enable", svc),
@@ -349,6 +358,16 @@ class Planner:
             commands=self._user_commands(cfg),
             destructive=False,
             description="set root password and create regular users",
+        )
+
+    def _snapper_step(self) -> PlannedStep:
+        return PlannedStep(
+            id="snapper",
+            title="Initialise snapper",
+            phase=StepPhase.SYSTEM_CONFIG,
+            commands=SnapperStrategy().commands(),
+            destructive=False,
+            description="snapper create-config / for periodic snapshots",
         )
 
     def _cleanup_step(self, cfg: Config, mount_root: Path) -> PlannedStep:
