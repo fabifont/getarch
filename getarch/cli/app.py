@@ -30,6 +30,9 @@ from getarch.cli.commands import (
     validate as validate_cmd,
 )
 from getarch.cli.commands import (
+    verify as verify_cmd,
+)
+from getarch.cli.commands import (
     version as version_cmd,
 )
 from getarch.logging import LogLevel, configure_logging
@@ -78,6 +81,7 @@ app.command("schema")(schema_cmd.run)
 app.command("examples")(examples_cmd.run)
 app.command("discover")(discover_cmd.run)
 app.command("tui")(tui_cmd.run)
+app.command("verify")(verify_cmd.run)
 app.command("version")(version_cmd.run)
 
 
