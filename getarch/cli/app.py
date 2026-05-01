@@ -15,6 +15,9 @@ from getarch.cli.commands import (
     examples as examples_cmd,
 )
 from getarch.cli.commands import (
+    help_error as help_error_cmd,
+)
+from getarch.cli.commands import (
     install as install_cmd,
 )
 from getarch.cli.commands import (
@@ -87,6 +90,14 @@ app.command("tui")(tui_cmd.run)
 app.command("verify")(verify_cmd.run)
 app.command("microcode")(microcode_cmd.run)
 app.command("version")(version_cmd.run)
+
+
+help_app = typer.Typer(
+    name="help", help="In-tree documentation surface (e.g. error codes).",
+    no_args_is_help=True,
+)
+help_app.command("error")(help_error_cmd.run)
+app.add_typer(help_app, name="help")
 
 
 def main() -> None:

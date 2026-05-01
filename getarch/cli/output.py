@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from rich.console import Console
 from rich.prompt import Confirm
 
+from getarch.errors import GetarchError
+
 
 @dataclass(slots=True)
 class GetarchConsole:
@@ -31,6 +33,29 @@ class GetarchConsole:
             sys.stdout.write(json.dumps({"level": "error", "message": message}) + "\n")
         else:
             self._console.print(f"[bold red]error:[/bold red] {message}")
+
+    def render_exception(self, exc: GetarchError) -> None:
+        """Render a getarch exception with its stable code + help link."""
+        code = exc.code
+        message = str(exc)
+        if self.json_mode:
+            payload: dict[str, object] = {
+                "level": "error",
+                "code": code,
+                "message": message,
+            }
+            if exc.hint:
+                payload["hint"] = exc.hint
+            sys.stdout.write(json.dumps(payload) + "\n")
+            return
+        self._console.print(
+            f"[bold red]error\\[{code}]:[/bold red] {message}",
+        )
+        if exc.hint:
+            self._console.print(f"  [yellow]hint:[/yellow] {exc.hint}")
+        self._console.print(
+            f"  [dim]see:[/dim] getarch help error {code}",
+        )
 
     def confirm(self, message: str) -> bool:
         if self.json_mode:

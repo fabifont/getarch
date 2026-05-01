@@ -45,7 +45,7 @@ def run(
             cpu_vendor = None
         resolved = _resolve_microcode(cfg.microcode.kind, cpu_vendor)
     except GetarchError as exc:
-        console.error(str(exc))
+        console.render_exception(exc)
         raise typer.Exit(code=2) from None
 
     payload = {

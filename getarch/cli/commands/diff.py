@@ -148,7 +148,7 @@ def run(
             plan_b = Planner().build(cfg=cfg_b, disk=disk_b, mount_root=mount_root)
             label_b = str(config_b)
     except GetarchError as exc:
-        console.error(str(exc))
+        console.render_exception(exc)
         raise typer.Exit(code=2) from None
 
     rendered = _diff_lines(

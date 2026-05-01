@@ -295,7 +295,7 @@ def run(
                 )
             raise
     except GetarchError as exc:
-        console.error(str(exc))
+        console.render_exception(exc)
         raise typer.Exit(code=2) from None
     if dry_run:
         console.log("[yellow]dry-run completed[/yellow]")

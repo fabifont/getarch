@@ -57,7 +57,7 @@ def run(
             cpu_vendor=_discover_cpu_vendor(),
         )
     except GetarchError as exc:
-        console.error(str(exc))
+        console.render_exception(exc)
         raise typer.Exit(code=2) from None
 
     if obj.get("json_mode"):

@@ -27,7 +27,7 @@ def run(
         cfg = load_config(config)
         validate_semantics(cfg)
     except GetarchError as exc:
-        console.error(str(exc))
+        console.render_exception(exc)
         raise typer.Exit(code=2) from None
     if obj.get("json_mode"):
         console.log({"status": "ok", "version": cfg.version})
