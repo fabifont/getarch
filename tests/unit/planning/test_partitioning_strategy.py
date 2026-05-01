@@ -31,3 +31,15 @@ def test_efi_swap_root_three_partitions() -> None:
     flat = " ".join(arg for c in cmds for arg in c.argv)
     assert "8200" in flat
     assert "+2048MiB" in flat
+
+
+def test_luksheader_layout_emits_cryptheader_partition() -> None:
+    disk = Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**33)
+    layout = PartitionLayout(layout="efi-luksheader-root", efi_size_mib=512)
+    cmds = SgdiskStrategy(disk=disk, layout=layout, encrypted=True).commands()
+    flat = " ".join(arg for c in cmds for arg in c.argv)
+    assert "cryptheader" in flat
+    assert "+16MiB" in flat
+    # cryptheader is partition 2; cryptsystem is partition 3.
+    assert any("--change-name=2:cryptheader" in arg for c in cmds for arg in c.argv)
+    assert any("--change-name=3:cryptsystem" in arg for c in cmds for arg in c.argv)

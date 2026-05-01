@@ -17,6 +17,7 @@ def validate_semantics(cfg: Config) -> None:
     _check_luks_home_incompatible(cfg)
     _check_mountpoints(cfg)
     _check_firmware_bootloader(cfg)
+    _check_detached_header(cfg)
 
 
 def _check_kernel_in_packages(cfg: Config) -> None:
@@ -138,4 +139,27 @@ def _check_firmware_bootloader(cfg: Config) -> None:
         raise SemanticConfigError(
             f"firmware='bios' requires bootloader.kind='grub'; got "
             f"{cfg.bootloader.kind!r}",
+        )
+
+
+_LUKSHEADER_DEVICE_PATH = "/dev/disk/by-partlabel/cryptheader"
+
+
+def _check_detached_header(cfg: Config) -> None:
+    layout_has_carrier = "luksheader" in cfg.partitioning.layout
+    if cfg.encryption.header_path is None:
+        if layout_has_carrier:
+            raise SemanticConfigError(
+                f"partitioning.layout={cfg.partitioning.layout!r} expects "
+                "encryption.header_path to be set (typically "
+                f"{_LUKSHEADER_DEVICE_PATH!r})",
+            )
+        return
+    # header_path is set
+    if not layout_has_carrier:
+        raise SemanticConfigError(
+            "encryption.header_path requires a partitioning.layout that "
+            "includes a 'luksheader' partition (e.g. "
+            "'efi-luksheader-root'); without one, the bootloader and "
+            "initramfs cannot reach the header at boot",
         )

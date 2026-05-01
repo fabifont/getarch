@@ -17,7 +17,14 @@ class DiskConfig(_Frozen):
 
 
 class PartitionLayout(_Frozen):
-    layout: Literal["efi-root", "efi-swap-root", "efi-home-root", "efi-swap-home-root"] = "efi-root"
+    layout: Literal[
+        "efi-root",
+        "efi-swap-root",
+        "efi-home-root",
+        "efi-swap-home-root",
+        "efi-luksheader-root",
+        "efi-swap-luksheader-root",
+    ] = "efi-root"
     efi_size_mib: int = Field(default=512, ge=128, le=2048)
     swap_size_mib: int | None = Field(default=None, ge=128)
     home_size_mib: int | None = Field(default=None, ge=1024)
@@ -76,17 +83,6 @@ class EncryptionConfig(_Frozen):
             )
         if self.tpm2_unlock and self.fido2_unlock:
             raise ValueError("set at most one of tpm2_unlock or fido2_unlock")
-        if self.header_path:
-            # Detached headers require the header file to be reachable at
-            # boot via initramfs or external media. Booting the resulting
-            # system would need bootloader/initramfs support that getarch
-            # does not yet provide. Refuse instead of producing an
-            # unbootable system.
-            raise ValueError(
-                "encryption.header_path is not yet supported: detached LUKS "
-                "headers need boot-time access to the header that getarch "
-                "cannot guarantee. Track the roadmap for support.",
-            )
         return self
 
 

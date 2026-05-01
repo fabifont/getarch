@@ -3,12 +3,13 @@ import urllib.request
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
 from getarch.config.examples import EXAMPLES
 from getarch.config.schema.v1 import Config
+from getarch.config.semantic import validate_semantics
 from getarch.domain.disk import Disk, DiskPath
 from getarch.errors import EnvironmentError as EnvErr
+from getarch.errors import SemanticConfigError
 from getarch.system.preflight import EnvironmentReport, preflight_environment
 
 
@@ -191,13 +192,13 @@ def test_preflight_fails_when_package_missing() -> None:
         _call(pac=_Pac(exists=False))
 
 
-def test_detached_luks_header_rejected_at_schema_time() -> None:
-    """Detached headers are not safely supported yet — refuse at load."""
+def test_detached_luks_header_without_carrier_layout_rejected() -> None:
+    """header_path needs a luksheader carrier layout (semantic, not schema)."""
     cfg_dict = dict(EXAMPLES["minimal-ext4"])
     cfg_dict["encryption"] = {
         "kind": "luks2",
         "password": "x",
-        "header_path": "/run/header",
+        "header_path": "/dev/disk/by-partlabel/cryptheader",
     }
     cfg_dict["initramfs"] = {
         "generator": "mkinitcpio",
@@ -215,8 +216,9 @@ def test_detached_luks_header_rejected_at_schema_time() -> None:
             "fsck",
         ],
     }
-    with pytest.raises(ValidationError, match="header_path"):
-        Config.model_validate(cfg_dict)
+    cfg = Config.model_validate(cfg_dict)
+    with pytest.raises(SemanticConfigError, match="luksheader"):
+        validate_semantics(cfg)
 
 
 def test_preflight_probes_first_mirror_and_passes(

@@ -32,6 +32,12 @@ class SgdiskStrategy:
             cmds.extend(self._partition(index, f"+{size}MiB", "8200", "swap"))
             index += 1
 
+        if "luksheader" in self.layout.layout:
+            # 16 MiB header carrier — enough for a LUKS2 header (16384
+            # sectors of 512 B). Typecode 8300 (Linux fs).
+            cmds.extend(self._partition(index, "+16MiB", "8300", "cryptheader"))
+            index += 1
+
         root_label = "cryptsystem" if self.encrypted else "system"
         if "home" in self.layout.layout:
             home_size = self.layout.home_size_mib
