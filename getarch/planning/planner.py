@@ -50,8 +50,30 @@ from getarch.planning.strategies.repositories import (
 )
 from getarch.planning.strategies.snapper import SnapperStrategy
 from getarch.planning.strategies.swap import SwapfileStrategy, ZramStrategy
+from getarch.system.quirks import Quirk, QuirkRegistry
 
 _PLAN_VERSION = "1"
+
+_quirk_registry_cache: QuirkRegistry | None = None
+
+
+def _quirk_registry() -> QuirkRegistry:
+    global _quirk_registry_cache  # noqa: PLW0603 — module-level lazy cache
+    cached = _quirk_registry_cache
+    if cached is None:
+        cached = QuirkRegistry.load_default()
+        _quirk_registry_cache = cached
+    return cached
+
+
+def set_quirk_registry(registry: QuirkRegistry | None) -> None:
+    """Override the planner's quirk registry (test seam).
+
+    Pass ``None`` to drop the override and re-load the on-disk registry
+    on the next call.
+    """
+    global _quirk_registry_cache  # noqa: PLW0603
+    _quirk_registry_cache = registry
 
 
 @dataclass(slots=True)
@@ -317,6 +339,13 @@ class Planner:
                 f"Create GPT layout {cfg.partitioning.layout!r} "
                 f"({cfg.firmware}) on {disk.path.as_posix()}"
             ),
+        )
+
+    def _enabled_quirks(self, cfg: Config) -> tuple[Quirk, ...]:
+        registry = _quirk_registry()
+        return tuple(
+            q for q in (registry.by_id(qid) for qid in cfg.quirks.enable)
+            if q is not None
         )
 
     def _label_for_role(self, cfg: Config, role: str, default: str) -> str:
@@ -735,12 +764,19 @@ class Planner:
             fido2_unlock=cfg.encryption.fido2_unlock,
             header_path=cfg.encryption.header_path,
         )
+        # Quirks contribute extra MODULES to the initramfs config.
+        extra_modules: list[str] = []
+        for quirk in self._enabled_quirks(cfg):
+            for module in quirk.modules:
+                if module not in extra_modules:
+                    extra_modules.append(module)
         strategy = build_initramfs_strategy(
             generator=cfg.initramfs.generator,
             hooks=tuple(cfg.initramfs.hooks),
             kernel=KernelSpec(kind=KernelKind(cfg.kernel.kind)),
             encryption=encryption_spec,
             mount_root=mount_root,
+            extra_modules=tuple(extra_modules),
         )
         return PlannedStep(
             id="initramfs",
@@ -770,6 +806,11 @@ class Planner:
             p.startswith("crashkernel=") for p in params
         ):
             params.append(f"crashkernel={cfg.kdump.crashkernel}")
+        # Apply user-acknowledged hardware quirks (cmdline contributions).
+        for quirk in self._enabled_quirks(cfg):
+            for entry in quirk.cmdline:
+                if entry not in params:
+                    params.append(entry)
         bl_spec = BootloaderSpec(
             kind=BootloaderKind(cfg.bootloader.kind),
             entry_id=cfg.bootloader.entry_id,

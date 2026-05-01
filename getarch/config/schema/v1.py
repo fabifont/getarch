@@ -242,6 +242,19 @@ class BootloaderConfig(_Frozen):
     extra_kernel_params: list[str] = Field(default_factory=list)
 
 
+class QuirksConfig(_Frozen):
+    """Hardware quirks the user opts into.
+
+    The planner walks ``getarch/quirks/*.yaml`` and applies any quirk
+    whose ``id`` is listed here: contributed modules land in the
+    mkinitcpio MODULES line, contributed cmdline params get appended
+    to the bootloader cmdline. Preflight surfaces detected-but-not-
+    enabled quirks as a warning so users learn about applicable fixes.
+    """
+
+    enable: list[str] = Field(default_factory=list)
+
+
 class KdumpConfig(_Frozen):
     """Kernel crash-dump (kdump) configuration.
 
@@ -480,6 +493,7 @@ class Config(_Frozen):
     mountpoints: list[MountpointConfig] = Field(default_factory=list)
     repositories: RepositoriesConfig = Field(default_factory=RepositoriesConfig)
     kdump: KdumpConfig = Field(default_factory=KdumpConfig)
+    quirks: QuirksConfig = Field(default_factory=QuirksConfig)
     reboot: bool = False
 
     @field_validator("packages")

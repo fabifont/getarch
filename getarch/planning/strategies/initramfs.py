@@ -15,10 +15,13 @@ class MkinitcpioStrategy:
     hooks: tuple[str, ...]
     kernel: KernelSpec
     mount_root: Path
+    extra_modules: tuple[str, ...] = ()
 
     def commands(self) -> tuple[Command, ...]:
         snippet_path = self.mount_root / "etc/mkinitcpio.conf.d/10-hooks.conf"
         hooks_text = f"HOOKS=({' '.join(self.hooks)})\n"
+        if self.extra_modules:
+            hooks_text += f"MODULES=({' '.join(self.extra_modules)})\n"
         return (
             Command(
                 argv=("install", "-Dm644", "/dev/stdin", str(snippet_path)),
@@ -82,13 +85,20 @@ def build_initramfs_strategy(
     kernel: KernelSpec,
     encryption: EncryptionSpec,
     mount_root: Path,
+    extra_modules: tuple[str, ...] = (),
 ) -> MkinitcpioStrategy | DracutStrategy:
     if generator == "mkinitcpio":
-        return MkinitcpioStrategy(hooks=hooks, kernel=kernel, mount_root=mount_root)
+        return MkinitcpioStrategy(
+            hooks=hooks,
+            kernel=kernel,
+            mount_root=mount_root,
+            extra_modules=extra_modules,
+        )
     if generator == "dracut":
         return DracutStrategy(
             kernel=kernel,
             encryption=encryption,
             mount_root=mount_root,
+            extra_modules=extra_modules,
         )
     raise ValueError(f"unsupported initramfs generator: {generator!r}")

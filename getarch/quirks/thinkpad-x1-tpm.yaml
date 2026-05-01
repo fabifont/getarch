@@ -1,0 +1,10 @@
+id: thinkpad-x1-tpm
+description: |
+  ThinkPad X1 Carbon (Gen 9+) requires the tpm_tis module loaded
+  early in the initramfs for TPM2 LUKS unlock to succeed before
+  systemd-cryptsetup runs. Without this, the first boot drops to
+  the password prompt.
+match:
+  pci_subsystem: "17aa:225f"
+modules:
+  - tpm_tis
