@@ -183,13 +183,47 @@ class WiredBootstrap(_Frozen):
     device: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
 
 
+class WifiEnterpriseBootstrap(_Frozen):
+    kind: Literal["iwctl-eap"] = "iwctl-eap"
+    device: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
+    ssid: str
+    username: str
+    password: str | None = None
+    cert_path: str | None = None
+    private_key_path: str | None = None
+    eap_method: Literal["PEAP", "TLS", "TTLS"] = "PEAP"
+
+    @model_validator(mode="after")
+    def _credentials_present(self) -> WifiEnterpriseBootstrap:
+        has_password = bool(self.password)
+        has_cert = bool(self.cert_path) and bool(self.private_key_path)
+        if not (has_password or has_cert):
+            raise ValueError(
+                "iwctl-eap bootstrap requires either a password (PEAP/TTLS) "
+                "or a cert_path+private_key_path pair (TLS)",
+            )
+        return self
+
+
+class WireguardBootstrap(_Frozen):
+    kind: Literal["wireguard"] = "wireguard"
+    config_path: str
+    device: str = "wg0"
+
+
 class NetworkConfig(_Frozen):
     hostname: str
     backend: Literal["networkmanager", "systemd-networkd", "iwd"] = "networkmanager"
     extra_packages: list[str] = Field(default_factory=list)
     systemd_networkd: list[SystemdNetworkdProfile] = Field(default_factory=list)
     iwd_networks: list[IwdNetworkConfig] = Field(default_factory=list)
-    bootstrap: WifiBootstrap | WiredBootstrap | None = Field(default=None)
+    bootstrap: (
+        WifiBootstrap
+        | WiredBootstrap
+        | WifiEnterpriseBootstrap
+        | WireguardBootstrap
+        | None
+    ) = Field(default=None)
     firewall_nftables_rules: list[str] = Field(default_factory=list)
 
 

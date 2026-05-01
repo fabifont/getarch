@@ -109,17 +109,34 @@ class DiskWipeStep:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeNetworkBootstrapStep:
-    """Bring up wifi/wired before the runtime preflight needs internet.
+    """Bring up wifi/wired/vpn before the runtime preflight needs internet.
 
-    Wraps ``iwctl station <dev> connect <ssid>`` (with PSK piped in) for
-    wifi or ``dhcpcd <dev>`` for wired DHCP. Inserted by the install
-    command immediately *before* :class:`RuntimePreflightStep`.
+    Backends:
+
+    * ``iwctl`` — WPA2-PSK via ``iwctl station <dev> connect <ssid>``
+      (passphrase dropped into ``/var/lib/iwd/<ssid>.psk``).
+    * ``dhcp`` — wired ``dhcpcd <dev>``.
+    * ``iwctl-eap`` — WPA2-Enterprise via iwd 8021x profile under
+      ``/var/lib/iwd/<ssid>.8021x`` (PEAP/TTLS use password, TLS uses
+      cert + key), then ``iwctl station <dev> connect <ssid>``.
+    * ``wireguard`` — bring an existing ``wg-quick`` config up before the
+      runtime preflight (so pacman can reach a private mirror over the
+      tunnel).
+
+    Inserted by the install command immediately *before*
+    :class:`RuntimePreflightStep`.
     """
 
     backend: str
     device: str
     ssid: str | None = None
     psk: str | None = None
+    username: str | None = None
+    password: str | None = None
+    cert_path: str | None = None
+    private_key_path: str | None = None
+    eap_method: str = "PEAP"
+    config_path: str | None = None
     id: str = "runtime-network-bootstrap"
     title: str = "Bring up network"
     destructive: bool = False
@@ -159,6 +176,50 @@ class RuntimeNetworkBootstrapStep:
                     ),
                 ),
             )
+        elif self.backend == "iwctl-eap":
+            if not self.ssid or not self.username:
+                raise _EnvErr(
+                    "iwctl-eap bootstrap requires ssid and username",
+                )
+            profile_path = f"/var/lib/iwd/{self.ssid}.8021x"
+            profile = self._render_8021x_profile()
+            results.append(
+                ctx.runner.run(
+                    Command(
+                        argv=("install", "-Dm600", "/dev/stdin", profile_path),
+                        input=profile,
+                        sensitive=True,
+                        description=f"write {profile_path}",
+                    ),
+                ),
+            )
+            results.append(
+                ctx.runner.run(
+                    Command(
+                        argv=(
+                            "iwctl",
+                            "station",
+                            self.device,
+                            "connect",
+                            self.ssid,
+                        ),
+                        description=(
+                            f"connect {self.device} to wifi {self.ssid} (EAP)"
+                        ),
+                    ),
+                ),
+            )
+        elif self.backend == "wireguard":
+            if not self.config_path:
+                raise _EnvErr("wireguard bootstrap requires config_path")
+            results.append(
+                ctx.runner.run(
+                    Command(
+                        argv=("wg-quick", "up", self.config_path),
+                        description=f"bring up wireguard tunnel {self.device}",
+                    ),
+                ),
+            )
         elif self.backend == "dhcp":
             results.append(
                 ctx.runner.run(
@@ -174,6 +235,40 @@ class RuntimeNetworkBootstrapStep:
             StepStatus.SUCCEEDED if all(r.ok for r in results) else StepStatus.FAILED
         )
         return StepResult(step_id=self.id, status=status, commands=tuple(results))
+
+    def _render_8021x_profile(self) -> str:
+        method = self.eap_method
+        lines: list[str] = ["[Security]", f"EAP-Method={method}"]
+        if method == "TLS":
+            if not self.cert_path or not self.private_key_path:
+                raise _EnvErr(
+                    "iwctl-eap TLS requires cert_path and private_key_path",
+                )
+            lines.extend(
+                [
+                    f"EAP-Identity={self.username}",
+                    f"EAP-TLS-ClientCert={self.cert_path}",
+                    f"EAP-TLS-ClientKey={self.private_key_path}",
+                ],
+            )
+        elif method in {"PEAP", "TTLS"}:
+            if not self.password:
+                raise _EnvErr(
+                    f"iwctl-eap {method} requires password",
+                )
+            phase2 = "MSCHAPV2" if method == "PEAP" else "Token-PAP"
+            prefix = "EAP-PEAP" if method == "PEAP" else "EAP-TTLS"
+            lines.extend(
+                [
+                    "EAP-Identity=anonymous",
+                    f"{prefix}-Phase2-Method={phase2}",
+                    f"{prefix}-Phase2-Identity={self.username}",
+                    f"{prefix}-Phase2-Password={self.password}",
+                ],
+            )
+        else:
+            raise _EnvErr(f"unsupported EAP method {method!r}")
+        return "\n".join(lines) + "\n"
 
 
 @dataclass(frozen=True, slots=True)

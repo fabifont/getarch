@@ -170,6 +170,12 @@ def _execute_pipeline(
                 device=bootstrap.device,
                 ssid=getattr(bootstrap, "ssid", None),
                 psk=getattr(bootstrap, "psk", None),
+                username=getattr(bootstrap, "username", None),
+                password=getattr(bootstrap, "password", None),
+                cert_path=getattr(bootstrap, "cert_path", None),
+                private_key_path=getattr(bootstrap, "private_key_path", None),
+                eap_method=getattr(bootstrap, "eap_method", "PEAP"),
+                config_path=getattr(bootstrap, "config_path", None),
             ),
         )
     if not skip_runtime_preflight and not dry_run:
