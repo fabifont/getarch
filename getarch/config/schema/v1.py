@@ -327,6 +327,7 @@ class WifiEnterpriseBootstrap(_Frozen):
     password: str | None = None
     cert_path: str | None = None
     private_key_path: str | None = None
+    ca_cert_path: str | None = None
     eap_method: Literal["PEAP", "TLS", "TTLS"] = "PEAP"
 
     @model_validator(mode="after")

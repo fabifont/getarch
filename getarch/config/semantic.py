@@ -188,9 +188,6 @@ def _check_firmware_bootloader(cfg: Config) -> None:
             )
 
 
-_LUKSHEADER_DEVICE_PATH = "/dev/disk/by-partlabel/cryptheader"
-
-
 def _check_lvm_layout(cfg: Config) -> None:
     if cfg.partitioning.lvm is None:
         return
@@ -234,10 +231,22 @@ def _check_detached_header(cfg: Config) -> None:
     layout_has_carrier = _has_role(cfg, "luksheader")
     if cfg.encryption.header_path is None:
         if layout_has_carrier:
+            # Resolve the actual carrier label so the diagnostic stays
+            # accurate under custom layouts (where the user may have
+            # named the carrier something other than "cryptheader").
+            if cfg.partitioning.custom is not None:
+                carrier_label = next(
+                    (p.label for p in cfg.partitioning.custom
+                     if p.role == "luksheader"),
+                    "cryptheader",
+                )
+            else:
+                carrier_label = "cryptheader"
+            carrier_path = f"/dev/disk/by-partlabel/{carrier_label}"
             raise SemanticConfigError(
                 f"partitioning.layout={cfg.partitioning.layout!r} expects "
                 "encryption.header_path to be set (typically "
-                f"{_LUKSHEADER_DEVICE_PATH!r})",
+                f"{carrier_path!r})",
             )
         return
     # header_path is set

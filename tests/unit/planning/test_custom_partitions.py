@@ -228,3 +228,57 @@ def test_planner_partitioning_step_uses_custom_strategy() -> None:
     # Custom strategy emits exactly 1 zap + 3 commands per partition.
     assert len(part.commands) == 1 + 3 * 2
     assert part.title == "Partition disk (custom layout)"
+
+
+def test_planner_encryption_step_uses_custom_root_label() -> None:
+    """Regression: with a custom layout that names the root partition
+    something other than ``cryptsystem``, the LUKS strategy must format
+    the user's actual partition (not a non-existent
+    ``/dev/disk/by-partlabel/cryptsystem``)."""
+
+    payload = _custom_payload([
+        {"label": "esp", "size_mib": 512, "typecode": "ef00", "role": "efi"},
+        {"label": "cryptbox", "size_mib": None, "typecode": "8300", "role": "root"},
+    ])
+    payload["encryption"] = {"kind": "luks2", "password": "x"}
+    payload["initramfs"] = {
+        "generator": "mkinitcpio",
+        "hooks": [
+            "base", "systemd", "autodetect", "modconf", "kms", "keyboard",
+            "sd-vconsole", "block", "sd-encrypt", "filesystems", "fsck",
+        ],
+    }
+    cfg = Config.model_validate(payload)
+    plan = Planner().build(
+        cfg=cfg,
+        disk=Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**40),
+        mount_root=Path("/mnt"),
+    )
+    enc = next(s for s in plan.steps if s.id == "encryption")
+    # Both luksFormat and `open <part> <mapper>` reference the user's
+    # cryptbox label, never the default cryptsystem.
+    flat = " ".join(arg for c in enc.commands for arg in c.argv)
+    assert "/dev/disk/by-partlabel/cryptbox" in flat
+    assert "/dev/disk/by-partlabel/cryptsystem" not in flat
+
+
+def test_semantic_detached_header_diagnostic_uses_custom_label() -> None:
+    """Diagnostic for missing header_path mentions the user's label."""
+
+    payload = _custom_payload([
+        {"label": "esp", "size_mib": 512, "typecode": "ef00", "role": "efi"},
+        {"label": "lukshdr", "size_mib": 16, "typecode": "8300",
+         "role": "luksheader"},
+        {"label": "rootfs", "size_mib": None, "typecode": "8300", "role": "root"},
+    ])
+    payload["encryption"] = {"kind": "luks2", "password": "x"}
+    payload["initramfs"] = {
+        "generator": "mkinitcpio",
+        "hooks": [
+            "base", "systemd", "autodetect", "modconf", "kms", "keyboard",
+            "sd-vconsole", "block", "sd-encrypt", "filesystems", "fsck",
+        ],
+    }
+    cfg = Config.model_validate(payload)
+    with pytest.raises(SemanticConfigError, match="lukshdr"):
+        validate_semantics(cfg)

@@ -422,11 +422,15 @@ class Planner:
             fido2_unlock=cfg.encryption.fido2_unlock,
             header_path=cfg.encryption.header_path,
         )
+        crypt_label = self._label_for_role(cfg, "root", "cryptsystem")
         return PlannedStep(
             id="encryption",
             title="Set up LUKS2 root",
             phase=StepPhase.ENCRYPTION,
-            commands=build_encryption_strategy(spec).commands(),
+            commands=build_encryption_strategy(
+                spec,
+                crypt_partition_path=f"/dev/disk/by-partlabel/{crypt_label}",
+            ).commands(),
             destructive=True,
             description="luksFormat then open root partition",
         )

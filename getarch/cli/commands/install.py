@@ -154,15 +154,19 @@ def _execute_pipeline(
         assume_yes=assume_yes,
         force=force,
     )
+    container_mode = cfg.firmware == "container"
     steps: list[object] = []
-    if not dry_run:
+    # Disk-busy guard is meaningless in a chroot/container — there's no
+    # target disk to refuse. Same for network bootstrap (the container
+    # caller is responsible for providing connectivity).
+    if not dry_run and not container_mode:
         steps.append(
             DiskBusyGuardStep(
                 block_devices=LsblkBlockDevices(runner=RealRunner()),
                 target_disk_path=cfg.disk.path,
             ),
         )
-    if not dry_run and cfg.network.bootstrap is not None:
+    if not dry_run and not container_mode and cfg.network.bootstrap is not None:
         bootstrap = cfg.network.bootstrap
         steps.append(
             RuntimeNetworkBootstrapStep(
@@ -174,11 +178,15 @@ def _execute_pipeline(
                 password=getattr(bootstrap, "password", None),
                 cert_path=getattr(bootstrap, "cert_path", None),
                 private_key_path=getattr(bootstrap, "private_key_path", None),
+                ca_cert_path=getattr(bootstrap, "ca_cert_path", None),
                 eap_method=getattr(bootstrap, "eap_method", "PEAP"),
                 config_path=getattr(bootstrap, "config_path", None),
             ),
         )
-    if not skip_runtime_preflight and not dry_run:
+    if not skip_runtime_preflight and not dry_run and not container_mode:
+        # The runtime preflight (timedatectl set-ntp, pacman-key init,
+        # archlinux-keyring refresh) only makes sense on the live ISO;
+        # the container caller is expected to ship a populated keyring.
         steps.append(RuntimePreflightStep())
     log_path = mount_root / "var/log/getarch.log"
     audit_step: object | None = (
@@ -277,15 +285,24 @@ def run(
     try:
         cfg = load_config(config)
         validate_semantics(cfg)
-        disks = _discover_disks()
-        report, cpu_vendor = _resolve_environment(
-            cfg,
-            skip_environment_preflight=skip_environment_preflight,
-            console=console,
-        )
-        target = next((d for d in disks if d.path.as_posix() == cfg.disk.path), None)
-        if target is None:
-            raise PlanError(f"target disk {cfg.disk.path} not present")
+        if cfg.firmware == "container":
+            # Container mode skips disk discovery + environment preflight;
+            # the caller is responsible for the chroot mount + keyring.
+            target = None
+            report = None
+            cpu_vendor = None
+        else:
+            disks = _discover_disks()
+            report, cpu_vendor = _resolve_environment(
+                cfg,
+                skip_environment_preflight=skip_environment_preflight,
+                console=console,
+            )
+            target = next(
+                (d for d in disks if d.path.as_posix() == cfg.disk.path), None,
+            )
+            if target is None:
+                raise PlanError(f"target disk {cfg.disk.path} not present")
         plan = Planner().build(
             cfg=cfg,
             disk=target,

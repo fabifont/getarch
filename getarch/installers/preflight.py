@@ -135,6 +135,7 @@ class RuntimeNetworkBootstrapStep:
     password: str | None = None
     cert_path: str | None = None
     private_key_path: str | None = None
+    ca_cert_path: str | None = None
     eap_method: str = "PEAP"
     config_path: str | None = None
     id: str = "runtime-network-bootstrap"
@@ -251,6 +252,8 @@ class RuntimeNetworkBootstrapStep:
                     f"EAP-TLS-ClientKey={self.private_key_path}",
                 ],
             )
+            if self.ca_cert_path:
+                lines.append(f"EAP-TLS-CACert={self.ca_cert_path}")
         elif method in {"PEAP", "TTLS"}:
             if not self.password:
                 raise _EnvErr(
@@ -266,6 +269,12 @@ class RuntimeNetworkBootstrapStep:
                     f"{prefix}-Phase2-Password={self.password}",
                 ],
             )
+            # Without a CA cert, recent iwd versions refuse PEAP/TTLS
+            # auth as a security default. Honour an explicit user-supplied
+            # CA cert; otherwise the operator must drop it via the system
+            # trust store before bootstrapping.
+            if self.ca_cert_path:
+                lines.append(f"{prefix}-CACert={self.ca_cert_path}")
         else:
             raise _EnvErr(f"unsupported EAP method {method!r}")
         return "\n".join(lines) + "\n"

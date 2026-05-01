@@ -182,3 +182,38 @@ def test_wireguard_requires_config_path() -> None:
     step = RuntimeNetworkBootstrapStep(backend="wireguard", device="wg0")
     with pytest.raises(EnvErr, match="config_path"):
         step.execute(_ctx(FakeRunner()))
+
+
+def test_iwctl_eap_peap_includes_ca_cert_when_provided() -> None:
+    runner = FakeRunner()
+    step = RuntimeNetworkBootstrapStep(
+        backend="iwctl-eap",
+        device="wlan0",
+        ssid="corp",
+        username="alice",
+        password="pw",
+        ca_cert_path="/etc/ssl/corp-ca.pem",
+        eap_method="PEAP",
+    )
+    res = step.execute(_ctx(runner))
+    assert res.status is StepStatus.SUCCEEDED
+    profile = runner.recorded[0].input or ""
+    assert "EAP-PEAP-CACert=/etc/ssl/corp-ca.pem" in profile
+
+
+def test_iwctl_eap_tls_includes_ca_cert_when_provided() -> None:
+    runner = FakeRunner()
+    step = RuntimeNetworkBootstrapStep(
+        backend="iwctl-eap",
+        device="wlan0",
+        ssid="corp",
+        username="alice@corp",
+        cert_path="/etc/iwd/c.pem",
+        private_key_path="/etc/iwd/c.key",
+        ca_cert_path="/etc/ssl/corp-ca.pem",
+        eap_method="TLS",
+    )
+    res = step.execute(_ctx(runner))
+    assert res.status is StepStatus.SUCCEEDED
+    profile = runner.recorded[0].input or ""
+    assert "EAP-TLS-CACert=/etc/ssl/corp-ca.pem" in profile

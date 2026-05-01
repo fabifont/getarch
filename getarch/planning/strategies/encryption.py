@@ -85,7 +85,11 @@ class LuksStrategy:
         return tuple(cmds)
 
 
-def build_encryption_strategy(spec: EncryptionSpec) -> NoEncryptionStrategy | LuksStrategy:
+def build_encryption_strategy(
+    spec: EncryptionSpec,
+    *,
+    crypt_partition_path: str = "/dev/disk/by-partlabel/cryptsystem",
+) -> NoEncryptionStrategy | LuksStrategy:
     if spec.kind is EncryptionKind.NONE:
         return NoEncryptionStrategy()
-    return LuksStrategy(spec=spec)
+    return LuksStrategy(spec=spec, crypt_partition_path=crypt_partition_path)
