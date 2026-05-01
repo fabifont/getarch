@@ -61,17 +61,33 @@ def _main_callback(  # type: ignore[reportUnusedFunction]  # registered via deco
     json_mode: bool = typer.Option(False, "--json"),
     verbose: bool = typer.Option(False, "--verbose"),
     debug: bool = typer.Option(False, "--debug"),
+    log_sink: str = typer.Option(
+        "console",
+        "--log-sink",
+        help=(
+            "Where logs are streamed in addition to the console. "
+            "Accepts 'console', 'syslog', 'syslog://host:port', or 'journald' "
+            "(requires python-systemd)."
+        ),
+    ),
+    log_format: str = typer.Option(
+        "text",
+        "--log-format",
+        help="Format for non-console sinks: 'text' or 'json'.",
+    ),
 ) -> None:
+    valid_levels: set[str] = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+    valid_formats: set[str] = {"text", "json"}
     if debug:
-        configure_logging(level="DEBUG")
+        level: LogLevel = "DEBUG"
     elif verbose:
-        configure_logging(level="INFO")
+        level = "INFO"
+    elif log_level in valid_levels:
+        level = log_level  # type: ignore[assignment]
     else:
-        # Trust the CLI input; only documented log levels are accepted by Typer
-        # callers. We still validate against the Literal values defensively.
-        valid: set[str] = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
-        level: LogLevel = log_level if log_level in valid else "INFO"  # type: ignore[assignment]
-        configure_logging(level=level)
+        level = "INFO"
+    fmt: str = log_format if log_format in valid_formats else "text"
+    configure_logging(level=level, sink=log_sink, fmt=fmt)  # type: ignore[arg-type]
     ctx = click.get_current_context()
     ctx.obj = {
         "log_level": log_level,
@@ -79,6 +95,8 @@ def _main_callback(  # type: ignore[reportUnusedFunction]  # registered via deco
         "json_mode": json_mode,
         "verbose": verbose,
         "debug": debug,
+        "log_sink": log_sink,
+        "log_format": log_format,
     }
 
 
