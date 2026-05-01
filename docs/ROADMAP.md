@@ -151,36 +151,54 @@ v2.0.0.
 ## P3 — advanced / future
 
 ### Interactive TUI mode
-* Different command (`getarch tui`), shares the domain core. Probably
-  Textual.
+* **Status:** done (MVP). `getarch tui CONFIG` opens a Textual-based
+  read-only viewer of the config + rendered plan. Optional dependency:
+  `pip install 'getarch[tui]'`. Execution-from-TUI is intentionally not
+  wired yet.
 
 ### Plan diffs
-* Compare two plans (e.g. proposed vs previous run) for review.
+* **Status:** done. `getarch diff CONFIG_A CONFIG_B` emits a unified
+  diff of the plans built from each config (step IDs + per-step argv).
 
 ### Step-by-step resume after failure
-* Persist execution state to a file; resume the pipeline after the failed
-  step.
-* **Risks:** state recovery is hard for partial mounts/encryption.
+* **Status:** done. `Pipeline` writes
+  `<mount>/var/log/getarch.state.json` after every successful step (and
+  on failure with `last_error`). `getarch install --resume` skips
+  already-completed step IDs. Caveat: resume cannot unwind partial
+  filesystem state from a half-finished destructive step — the user is
+  responsible for cleanup before resuming.
 
 ### BIOS/MBR boot
-* New partitioning + bootloader branches. Significant rework of EFI
-  assumptions.
-* **Depends on:** P2 bootloader factory.
+* **Status:** done. `firmware: "bios"` switches partitioning to
+  `SgdiskBiosStrategy` (1MiB BIOS-boot partition, no ESP) and the
+  bootloader to `GrubBiosStrategy` (`grub-install --target=i386-pc`).
+  Semantic validator refuses any non-grub bootloader on BIOS.
 
 ### Non-x86_64 architectures
-* aarch64 / RISC-V. Requires hardware testing.
+* **Status:** deferred indefinitely — needs aarch64/RISC-V hardware to
+  validate. Schema would grow `arch` field when there is a real test
+  surface.
 
 ### Btrfs snapshot integration with snapper
-* Configure snapper after install for automatic root snapshots.
+* **Status:** done. `filesystem.snapper=true` (btrfs only) installs the
+  `snapper` package, creates the `root` config in chroot, and enables
+  `snapper-timeline.timer` + `snapper-cleanup.timer`.
 
 ### `multilib` / extra repo enablement
-* Schema field; planner uncomments lines in `pacman.conf`.
+* **Status:** done. `repositories.multilib=true` uncomments the
+  `[multilib]` block in `/etc/pacman.conf` on the live ISO before
+  pacstrap; `repositories.extra` appends arbitrary repo blocks. The
+  strategy follows up with `pacman -Sy --noconfirm` so pacstrap sees
+  the new repos.
 
 ### Headless network bootstrap
-* `iwctl`/`nmcli` declarative pre-install network setup so the live ISO
-  can come up unattended.
+* **Status:** done. `network.bootstrap` accepts an `iwctl` or `dhcp`
+  payload that fires before the runtime preflight so the ISO has
+  internet for the keyring populate.
 
 ### Hypothesis-driven planner property tests
-* Generate random valid configs and assert planner invariants
-  (no duplicate steps, destructive set is exactly `{partitioning,
-  encryption, filesystems}`, etc.).
+* **Status:** done. `tests/property/test_planner_invariants.py`
+  generates random valid combos across fs / encryption / swap /
+  bootloader / initramfs / timeout and asserts: unique step IDs,
+  destructive-phase invariants, non-empty argv for every command, and
+  monotonic phase order.

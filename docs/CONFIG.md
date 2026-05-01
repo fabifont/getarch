@@ -27,6 +27,8 @@ This document describes every field in v1.
 | `mirrors` | object | yes | — | Mirror strategy. |
 | `users` | object | yes | — | Root authentication + optional regular users. |
 | `mountpoints` | list | no | `[]` | Extra partlabel→mountpoint pairs. |
+| `repositories` | object | no | `{}` | multilib + extra pacman repos. |
+| `firmware` | string | no | `"uefi"` | `"uefi"` or `"bios"`. |
 | `reboot` | bool | no | `false` | Reboot after the install? |
 
 ## `disk`
@@ -288,6 +290,75 @@ Root authentication kinds:
 Regular users may declare `password` (plain), `hashed_password` (preferred),
 `groups`, `shell`, `sudo`, `create_home`.
 
+## `repositories`
+
+```json
+{
+  "repositories": {
+    "multilib": true,
+    "extra": [
+      {"name": "archzfs", "include": "/etc/pacman.d/archzfs-mirrorlist"}
+    ]
+  }
+}
+```
+
+`multilib=true` uncomments the `[multilib]` block in
+`/etc/pacman.conf` on the live ISO before pacstrap. Each entry in
+`extra` appends a `[name]\nInclude = include\n` block. After every
+mutation the strategy runs `pacman -Sy --noconfirm` so pacstrap sees
+the new repos.
+
+## `firmware`
+
+`"uefi"` (default) or `"bios"`. With `"bios"`, the planner switches
+the partitioning strategy to a GPT layout with a 1MiB BIOS-boot
+partition (no ESP), and the bootloader strategy to GRUB
+(`grub-install --target=i386-pc <disk>`). `bootloader.kind` must be
+`"grub"` for BIOS — the semantic validator refuses any other choice.
+
+## Filesystem snapshots (snapper)
+
+```json
+{
+  "filesystem": {"kind": "btrfs", "label": "system", "snapper": true}
+}
+```
+
+Adds the `snapper` package, runs `snapper -c root create-config /` in
+the chroot, and enables `snapper-timeline.timer` +
+`snapper-cleanup.timer`. Only valid on `kind="btrfs"` (rejected
+otherwise).
+
+## Headless network bootstrap (`network.bootstrap`)
+
+Pre-pacstrap network setup so the runtime preflight can reach the
+internet on a freshly booted ISO without manual `iwctl` / `dhcpcd`
+typing. Two payload shapes:
+
+```json
+{
+  "network": {
+    "bootstrap": {
+      "kind": "iwctl",
+      "device": "wlan0",
+      "ssid": "MyWifi",
+      "psk": "hunter2"
+    }
+  }
+}
+```
+
+```json
+{
+  "network": {
+    "bootstrap": {"kind": "dhcp", "device": "enp0s3"}
+  }
+}
+```
+
+The PSK is marked sensitive so the audit log redacts it.
+
 ## `mountpoints`
 
 Custom partlabel→mountpoint pairs for partitions on the target disk that
@@ -316,6 +387,14 @@ with the chosen filesystem and labels it with `partition_label`.
 
 `true` adds a final `reboot` step. Default `false`.
 
+## Other commands
+
+* `getarch diff CONFIG_A CONFIG_B` — render a unified diff of the plans
+  built from two configs. Disk discovery is skipped; the planner uses a
+  stub `Disk` of the path declared in each config.
+* `getarch tui CONFIG` — Textual TUI for browsing a config + plan
+  read-only. Requires `getarch[tui]` (installs `textual`).
+
 ## Install command flags
 
 * `--dry-run` — render plan and execute via `DryRunner` (no IO).
@@ -337,3 +416,9 @@ with the chosen filesystem and labels it with `partition_label`.
   bypassed by `--skip-environment-preflight`, `--yes`, or `--force` — the
   whole point is to refresh the mount-state check immediately before
   destructive commands run.
+* `--resume` — pick up after a previous failed install by skipping every
+  step recorded in `<mount>/var/log/getarch.state.json`. Without
+  `--resume`, an existing state file aborts the install (so a stale state
+  file doesn't silently change behaviour). Caveat: resume works for steps
+  that were idempotent or fully completed; partial filesystem state from
+  a half-finished partitioning step is your problem to clean up.
