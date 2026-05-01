@@ -8,11 +8,13 @@ successfully, the schema version, and the last error if any.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
+_SUPPORTED_VERSIONS = frozenset({1, 2})
 _DEFAULT_FILENAME = "getarch.state.json"
 
 
@@ -20,6 +22,8 @@ _DEFAULT_FILENAME = "getarch.state.json"
 class PipelineState:
     completed: list[str] = field(default_factory=list)
     last_error: str | None = None
+    plan_fingerprint: str | None = None
+    plan_blob: str | None = None
     schema_version: int = _SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, object]:
@@ -27,15 +31,17 @@ class PipelineState:
             "schema_version": self.schema_version,
             "completed": list(self.completed),
             "last_error": self.last_error,
+            "plan_fingerprint": self.plan_fingerprint,
+            "plan_blob": self.plan_blob,
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> PipelineState:
         version = payload.get("schema_version")
-        if version != _SCHEMA_VERSION:
+        if version not in _SUPPORTED_VERSIONS:
             raise ValueError(
                 f"unsupported pipeline state schema_version {version!r} "
-                f"(expected {_SCHEMA_VERSION})",
+                f"(supported: {sorted(_SUPPORTED_VERSIONS)})",
             )
         completed_raw = payload.get("completed")
         if not isinstance(completed_raw, list):
@@ -43,9 +49,17 @@ class PipelineState:
         completed: list[str] = [str(item) for item in completed_raw]  # type: ignore[unknown-arg-type]
         last_error_raw = payload.get("last_error")
         last_error = str(last_error_raw) if isinstance(last_error_raw, str) else None
+        fingerprint_raw = payload.get("plan_fingerprint")
+        plan_fingerprint = (
+            str(fingerprint_raw) if isinstance(fingerprint_raw, str) else None
+        )
+        blob_raw = payload.get("plan_blob")
+        plan_blob = str(blob_raw) if isinstance(blob_raw, str) else None
         return cls(
             completed=completed,
             last_error=last_error,
+            plan_fingerprint=plan_fingerprint,
+            plan_blob=plan_blob,
             schema_version=_SCHEMA_VERSION,
         )
 
@@ -64,3 +78,8 @@ class PipelineState:
 
 def default_state_path(mount_root: Path) -> Path:
     return mount_root / "var/log" / _DEFAULT_FILENAME
+
+
+def fingerprint_plan_text(rendered_plan_json: str) -> str:
+    """SHA-256 of the rendered plan JSON; used to detect config drift."""
+    return hashlib.sha256(rendered_plan_json.encode("utf-8")).hexdigest()
