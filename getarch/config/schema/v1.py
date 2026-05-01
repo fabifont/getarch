@@ -166,6 +166,34 @@ class SystemdNetworkdProfile(_Frozen):
     network: dict[str, str | list[str]] = Field(default_factory=dict)
 
 
+class SystemdNetworkdNetdev(_Frozen):
+    """A virtual link rendered as ``/etc/systemd/network/<name>.netdev``.
+
+    The ``properties`` mapping is split between the ``[NetDev]`` section
+    (``Name`` + ``Kind`` are emitted automatically) and the kind-specific
+    section (``[VLAN]``, ``[Bridge]``, ``[Bond]``). Any key whose name
+    matches a kind-specific field (``Id``, ``Protocol`` for VLAN; the
+    bridge/bond manuals enumerate the rest) lands in the kind section;
+    everything else falls back to ``[NetDev]``.
+    """
+
+    name: str = Field(pattern=r"^[a-zA-Z0-9_.-]+$")
+    kind: Literal["vlan", "bridge", "bond"]
+    properties: dict[str, str] = Field(default_factory=dict)
+
+
+class SystemdNetworkdLink(_Frozen):
+    """A ``/etc/systemd/network/<name>.link`` file.
+
+    Rendered as two sections: ``[Match]`` (``match`` mapping) and
+    ``[Link]`` (``link`` mapping).
+    """
+
+    name: str = Field(pattern=r"^[a-zA-Z0-9_.-]+$")
+    match: dict[str, str] = Field(default_factory=dict)
+    link: dict[str, str | list[str]] = Field(default_factory=dict)
+
+
 class IwdNetworkConfig(_Frozen):
     ssid: str
     psk: str
@@ -216,6 +244,8 @@ class NetworkConfig(_Frozen):
     backend: Literal["networkmanager", "systemd-networkd", "iwd"] = "networkmanager"
     extra_packages: list[str] = Field(default_factory=list)
     systemd_networkd: list[SystemdNetworkdProfile] = Field(default_factory=list)
+    systemd_networkd_netdevs: list[SystemdNetworkdNetdev] = Field(default_factory=list)
+    systemd_networkd_links: list[SystemdNetworkdLink] = Field(default_factory=list)
     iwd_networks: list[IwdNetworkConfig] = Field(default_factory=list)
     bootstrap: (
         WifiBootstrap

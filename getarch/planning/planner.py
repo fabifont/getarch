@@ -35,6 +35,8 @@ from getarch.planning.strategies.mountpoints import (
 from getarch.planning.strategies.network import (
     IwdNetworkPlan,
     NetworkConfigStrategy,
+    NetworkdLinkPlan,
+    NetworkdNetdevPlan,
     NetworkdProfilePlan,
 )
 from getarch.planning.strategies.nftables import NftablesStrategy
@@ -695,15 +697,33 @@ class Planner:
             )
             for p in cfg.network.systemd_networkd
         )
+        netdevs = tuple(
+            NetworkdNetdevPlan(
+                name=n.name,
+                kind=n.kind,
+                properties=dict(n.properties),
+            )
+            for n in cfg.network.systemd_networkd_netdevs
+        )
+        links = tuple(
+            NetworkdLinkPlan(
+                name=ln.name,
+                match=dict(ln.match),
+                link=dict(ln.link),
+            )
+            for ln in cfg.network.systemd_networkd_links
+        )
         iwd = tuple(
             IwdNetworkPlan(ssid=n.ssid, psk=n.psk)
             for n in cfg.network.iwd_networks
         )
-        if not profiles and not iwd:
+        if not profiles and not netdevs and not links and not iwd:
             return None
         cmds = NetworkConfigStrategy(
             backend=cfg.network.backend,
             networkd_profiles=profiles,
+            networkd_netdevs=netdevs,
+            networkd_links=links,
             iwd_networks=iwd,
             mount_root=mount_root,
         ).commands()
