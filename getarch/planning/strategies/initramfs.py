@@ -55,15 +55,25 @@ class DracutStrategy:
 
     def commands(self) -> tuple[Command, ...]:
         conf_path = self.mount_root / "etc/dracut.conf.d/10-getarch.conf"
+        # `add_dracutmodules` lists *dracut* modules (e.g. `crypt`,
+        # `systemd`) — they're not the same namespace as kernel
+        # drivers. Quirks contribute kernel drivers (e.g. `tpm_tis`),
+        # which dracut handles via `force_drivers` to ensure they're
+        # installed in the initramfs even if dracut wouldn't pick them
+        # up by autodetection.
         modules: list[str] = ["base", "systemd", "fs-lib"]
         if self.encryption.kind is EncryptionKind.LUKS2:
             modules.append("crypt")
-        modules.extend(self.extra_modules)
-        conf_text = (
-            "hostonly=yes\n"
-            f"add_dracutmodules+=\" {' '.join(modules)} \"\n"
-            "compress=zstd\n"
-        )
+        conf_lines = [
+            "hostonly=yes",
+            f"add_dracutmodules+=\" {' '.join(modules)} \"",
+            "compress=zstd",
+        ]
+        if self.extra_modules:
+            conf_lines.append(
+                f"force_drivers+=\" {' '.join(self.extra_modules)} \"",
+            )
+        conf_text = "\n".join(conf_lines) + "\n"
         return (
             Command(
                 argv=("install", "-Dm644", "/dev/stdin", str(conf_path)),

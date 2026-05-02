@@ -117,20 +117,26 @@ cmdline:
         set_quirk_registry(None)
 
 
-def test_planner_ignores_unknown_quirk_id(tmp_path: Path) -> None:
+def test_planner_rejects_unknown_quirk_id_fail_closed(tmp_path: Path) -> None:
+    """Regression for codex P6 finding: unknown quirk IDs used to no-op
+    silently, leaving the user thinking a hardware fix had been applied
+    when it hadn't. The planner now refuses to build a plan."""
+
+    import pytest  # noqa: PLC0415
+
+    from getarch.errors import PlanError  # noqa: PLC0415
     from getarch.planning.planner import set_quirk_registry  # noqa: PLC0415
     set_quirk_registry(QuirkRegistry.load_from(tmp_path))
     try:
         payload = deepcopy(EXAMPLES["minimal-ext4"])
         payload["quirks"] = {"enable": ["nope"]}
         cfg = Config.model_validate(payload)
-        # Must not raise; unknown quirk IDs are silently dropped (the
-        # config just had no effect).
-        Planner().build(
-            cfg=cfg,
-            disk=Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**40),
-            mount_root=Path("/mnt"),
-        )
+        with pytest.raises(PlanError, match="unknown quirk"):
+            Planner().build(
+                cfg=cfg,
+                disk=Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**40),
+                mount_root=Path("/mnt"),
+            )
     finally:
         set_quirk_registry(None)
 

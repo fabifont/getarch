@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Final
 
+from getarch.errors import CommandFailedError
 from getarch.execution.command import Command
 from getarch.execution.result import CommandResult
 from getarch.execution.runner import CommandRunner
@@ -36,7 +37,23 @@ class LoggingRunner:
     hmac_key: bytes | None = None
 
     def run(self, command: Command, *, chroot_path: str = "/mnt") -> CommandResult:
-        result = self.inner.run(command, chroot_path=chroot_path)
+        try:
+            result = self.inner.run(command, chroot_path=chroot_path)
+        except CommandFailedError as exc:
+            # The pipeline fails fast on check=True nonzero exits, but
+            # the HMAC trailer must cover every command we attempted —
+            # otherwise the signed log silently omits the most
+            # operationally important event. Synthesise a record from
+            # the exception so the audit body matches reality, then
+            # re-raise so the install still aborts.
+            failed = CommandResult(
+                command=command,
+                returncode=exc.returncode,
+                stdout="",
+                stderr=exc.stderr,
+            )
+            self.lines.append(self._render(command, failed, chroot_path))
+            raise
         self.lines.append(self._render(command, result, chroot_path))
         return result
 

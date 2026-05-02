@@ -343,10 +343,24 @@ class Planner:
 
     def _enabled_quirks(self, cfg: Config) -> tuple[Quirk, ...]:
         registry = _quirk_registry()
-        return tuple(
-            q for q in (registry.by_id(qid) for qid in cfg.quirks.enable)
-            if q is not None
-        )
+        resolved: list[Quirk] = []
+        unknown: list[str] = []
+        for qid in cfg.quirks.enable:
+            quirk = registry.by_id(qid)
+            if quirk is None:
+                unknown.append(qid)
+            else:
+                resolved.append(quirk)
+        if unknown:
+            # Fail closed. A typo in `quirks.enable` would otherwise
+            # leave a hardware workaround silently un-applied; the user
+            # might believe the install is fixed when it actually isn't.
+            raise PlanError(
+                "unknown quirk IDs in cfg.quirks.enable: "
+                f"{', '.join(unknown)}. Run `getarch quirks list` to see "
+                "the available IDs.",
+            )
+        return tuple(resolved)
 
     def _label_for_role(self, cfg: Config, role: str, default: str) -> str:
         if cfg.partitioning.custom is None:
