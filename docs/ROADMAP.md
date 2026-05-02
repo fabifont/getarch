@@ -408,52 +408,57 @@ btrfs pre-snapshot, systemd-homed.
 Cross-cutting work that doesn't add features but makes the installer
 easier to operate, debug, and extend.
 
-### Structured audit log: stable JSON Lines schema + signature
+**Status:** all 8 items implemented and adversarially reviewed
+(commit b6631a8). The structlog swap was scoped down to keeping the
+stdlib `logging` module + adding optional syslog/journald sinks; full
+structlog adoption is deferred until the cost is justified.
+
+### Structured audit log: stable JSON Lines schema + signature *(done — e297803)*
 * **Why:** the current audit log is ad-hoc JSON Lines. Downstream
   consumers (compliance, SIEM) want a versioned schema and an HMAC.
 * **Plan:** publish `docs/audit-schema.md`; `LoggingRunner` includes
   a `schema_version` field; optional `--audit-hmac-key` CLI flag
   appends an HMAC-SHA256 line per record.
 
-### Structured logging with optional remote sink
+### Structured logging with optional remote sink *(done — 9c4e70c)*
 * **Why:** for CI/lab installs, having per-step logs streamed to
   syslog/journald-export simplifies debugging.
-* **Plan:** swap stdlib `logging` for `structlog`; add
-  `--log-sink syslog://...` / `--log-sink journald` option.
+* **Plan:** keep stdlib `logging`; add `--log-sink syslog://...` /
+  `--log-sink journald` and `--log-format text|json` options.
 
-### Discovery cache
+### Discovery cache *(done — 584412b)*
 * **Why:** `getarch discover` re-runs lsblk/localectl/timedatectl on
   every call. A short-lived cache would speed up `validate` + `plan` +
   `install` invocations on the same ISO boot.
 * **Plan:** `~/.cache/getarch/discovery.json` with a TTL (60s default).
 
-### Hardware quirks database
+### Hardware quirks database *(done — 4c19445, fail-closed b6631a8)*
 * **Why:** specific NIC/SATA/CPU combos need extra mkinitcpio modules
   or kernel parameters that getarch could opt-in automatically.
 * **Plan:** small YAML at `getarch/quirks/` keyed by PCI/USB IDs;
   preflight surfaces matches to the user; planner appends the
   corresponding modules/cmdline.
 
-### Crash dump / kdump
+### Crash dump / kdump *(done — 8a1b8b0)*
 * **Why:** kernel panics during install or first-boot are otherwise
   lost.
 * **Plan:** opt-in `kdump.enable` schema flag; planner installs
-  `kdump-tools`-equivalent and sets `crashkernel=` on the bootloader
+  `kexec-tools` and sets `crashkernel=` on the bootloader
   cmdline.
 
-### Better error messages with suggested fixes
+### Better error messages with suggested fixes *(done — ed6b60f)*
 * **Why:** `EnvironmentError` strings are useful but rarely actionable.
 * **Plan:** introduce `code: str` on `GetarchError` subclasses; CLI
   renders a one-liner + a `getarch help error <code>` link to docs.
 
-### Schema v2 migration path
+### Schema v2 migration path *(done — 03e05ac)*
 * **Why:** v1 already accumulates deprecated combinations. A v2 cycle
   would let us tighten defaults without breaking existing configs.
 * **Plan:** stub `getarch/config/schema/v2.py`; `config/loader.py`
   detects `version: 2` and routes accordingly; an in-tree
   `migrate_v1_to_v2` helper rewrites old configs.
 
-### Tutorial + post-install hardening guide
+### Tutorial + post-install hardening guide *(done — 09fe5bf)*
 * **Why:** the existing docs cover schema fields but not the
   end-to-end "first install" path or what to do once the system boots.
 * **Plan:** `docs/TUTORIAL.md` (full walkthrough) and
