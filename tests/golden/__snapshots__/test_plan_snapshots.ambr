@@ -88,6 +88,26 @@
             "sensitive": false,
             "input": null,
             "description": "label partition 2 as cryptsystem"
+          },
+          {
+            "argv": [
+              "partprobe",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "re-read partition table on /dev/sda"
+          },
+          {
+            "argv": [
+              "udevadm",
+              "settle"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "wait for udev to create by-partlabel symlinks"
           }
         ]
       },
@@ -825,6 +845,26 @@
             "sensitive": false,
             "input": null,
             "description": "label partition 4 as system"
+          },
+          {
+            "argv": [
+              "partprobe",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "re-read partition table on /dev/sda"
+          },
+          {
+            "argv": [
+              "udevadm",
+              "settle"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "wait for udev to create by-partlabel symlinks"
           }
         ]
       },
@@ -1483,6 +1523,26 @@
             "sensitive": false,
             "input": null,
             "description": "label partition 2 as system"
+          },
+          {
+            "argv": [
+              "partprobe",
+              "/dev/sda"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "re-read partition table on /dev/sda"
+          },
+          {
+            "argv": [
+              "udevadm",
+              "settle"
+            ],
+            "chroot": false,
+            "sensitive": false,
+            "input": null,
+            "description": "wait for udev to create by-partlabel symlinks"
           }
         ]
       },

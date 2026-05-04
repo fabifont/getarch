@@ -225,9 +225,14 @@ def test_planner_partitioning_step_uses_custom_strategy() -> None:
         mount_root=Path("/mnt"),
     )
     part = next(s for s in plan.steps if s.id == "partitioning")
-    # Custom strategy emits exactly 1 zap + 3 commands per partition.
-    assert len(part.commands) == 1 + 3 * 2
+    # Custom strategy emits 1 zap + 3 commands per partition + 2
+    # post-settle commands (partprobe + udevadm settle) appended by the
+    # planner so by-partlabel symlinks exist before mkfs runs.
+    assert len(part.commands) == 1 + 3 * 2 + 2
     assert part.title == "Partition disk (custom layout)"
+    # And the last two are the settle pair, in order.
+    assert part.commands[-2].argv[0] == "partprobe"
+    assert part.commands[-1].argv == ("udevadm", "settle")
 
 
 def test_planner_encryption_step_uses_custom_root_label() -> None:

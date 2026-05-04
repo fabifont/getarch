@@ -304,11 +304,28 @@ class Planner:
             steps.append(self._reboot_step())
 
     def _partitioning_step(self, cfg: Config, disk: Disk, *, encrypted: bool) -> PlannedStep:
+        disk_path = disk.path.as_posix()
+        # After sgdisk rewrites the partition table, the kernel needs to
+        # be told to re-read it (`partprobe`) and udev needs time to
+        # create the new ``/dev/disk/by-partlabel/*`` symlinks
+        # (`udevadm settle`). Without these, the very next step
+        # (`mkfs.fat /dev/disk/by-partlabel/EFI`) races and fails with
+        # "No such file or directory".
+        settle = (
+            Command(
+                argv=("partprobe", disk_path),
+                description=f"re-read partition table on {disk_path}",
+            ),
+            Command(
+                argv=("udevadm", "settle"),
+                description="wait for udev to create by-partlabel symlinks",
+            ),
+        )
         if cfg.partitioning.custom is not None:
             commands = SgdiskCustomStrategy(
                 disk=disk,
                 partitions=tuple(cfg.partitioning.custom),
-            ).commands()
+            ).commands() + settle
             label_summary = ",".join(p.label for p in cfg.partitioning.custom)
             return PlannedStep(
                 id="partitioning",
@@ -318,17 +335,17 @@ class Planner:
                 destructive=True,
                 description=(
                     f"Create custom GPT layout [{label_summary}] "
-                    f"({cfg.firmware}) on {disk.path.as_posix()}"
+                    f"({cfg.firmware}) on {disk_path}"
                 ),
             )
         if cfg.firmware == "bios":
             commands = SgdiskBiosStrategy(
                 disk=disk, layout=cfg.partitioning, encrypted=encrypted
-            ).commands()
+            ).commands() + settle
         else:
             commands = SgdiskStrategy(
                 disk=disk, layout=cfg.partitioning, encrypted=encrypted
-            ).commands()
+            ).commands() + settle
         return PlannedStep(
             id="partitioning",
             title="Partition disk",
@@ -337,7 +354,7 @@ class Planner:
             destructive=True,
             description=(
                 f"Create GPT layout {cfg.partitioning.layout!r} "
-                f"({cfg.firmware}) on {disk.path.as_posix()}"
+                f"({cfg.firmware}) on {disk_path}"
             ),
         )
 
