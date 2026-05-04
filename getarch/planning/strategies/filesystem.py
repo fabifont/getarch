@@ -213,6 +213,7 @@ class _SimpleMkfsStrategy:
     home_partition: str | None
     mkfs_argv: tuple[str, ...]
     description_label: str
+    fs_type: str
     label_flag: str = "-L"
 
     def commands(self) -> tuple[Command, ...]:
@@ -252,9 +253,21 @@ class _SimpleMkfsStrategy:
                     ),
                 ),
             )
+        # Pass `-t <fs>` explicitly. The Arch live ISO ships without
+        # /etc/filesystems and not every fs module is preloaded, so
+        # `mount` autodetect can fall through to wrong types (XFS/F2FS
+        # have been observed to surface as "Can't find a SQUASHFS
+        # superblock"). Naming the type makes the kernel load the
+        # right module deterministically.
         cmds.append(
             Command(
-                argv=("mount", self.root_partition, str(self.mount_root)),
+                argv=(
+                    "mount",
+                    "-t",
+                    self.fs_type,
+                    self.root_partition,
+                    str(self.mount_root),
+                ),
                 description="mount root filesystem",
             ),
         )
@@ -283,7 +296,13 @@ class _SimpleMkfsStrategy:
                         description="create /home mountpoint",
                     ),
                     Command(
-                        argv=("mount", self.home_partition, str(self.mount_root / "home")),
+                        argv=(
+                            "mount",
+                            "-t",
+                            self.fs_type,
+                            self.home_partition,
+                            str(self.mount_root / "home"),
+                        ),
                         description="mount /home filesystem",
                     ),
                 ),
@@ -307,6 +326,7 @@ def _xfs_strategy(
         home_partition=home_partition,
         mkfs_argv=("mkfs.xfs", "-f"),
         description_label="xfs",
+        fs_type="xfs",
     )
 
 
@@ -327,6 +347,7 @@ def _f2fs_strategy(
         home_partition=home_partition,
         mkfs_argv=("mkfs.f2fs", "-f"),
         description_label="f2fs",
+        fs_type="f2fs",
         label_flag="-l",
     )
 
