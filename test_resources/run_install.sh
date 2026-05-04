@@ -34,8 +34,18 @@ ARGS=(
   --skip-runtime-preflight
 )
 
+# Mirror install output to /dev/tty1 (the framebuffer that the QEMU GUI
+# window shows). The install bootstrap runs on ttyS0 because that's the
+# only tty the host orchestrator can drive bidirectionally; without this
+# tee, the GUI window would just sit at an idle login shell while the
+# real action happens off-screen on serial.
+TTY1_TEE=()
+if [ -w /dev/tty1 ]; then
+  TTY1_TEE=(/dev/tty1)
+fi
+
 set +e
-python "$ZIPAPP" "${ARGS[@]}" 2>&1 | tee "$LOG"
-echo "$?" > "$SENTINEL"
+python "$ZIPAPP" "${ARGS[@]}" 2>&1 | tee "$LOG" "${TTY1_TEE[@]}"
+echo "${PIPESTATUS[0]}" > "$SENTINEL"
 set -e
 sync

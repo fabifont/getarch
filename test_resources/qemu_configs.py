@@ -76,6 +76,12 @@ def build(fs: str, bootloader: str) -> dict[str, object]:
             "kind": bootloader,
             "entry_id": "arch",
             "timeout_seconds": 1,
+            # Send installed-system kernel output to ttyS0 so the
+            # post-install reboot-check (file:-mode serial) actually
+            # captures the login prompt. Without this, the kernel only
+            # writes to tty0 (framebuffer) and the reboot check times
+            # out at 10 minutes with an empty serial-boot.log.
+            "extra_kernel_params": ["console=ttyS0,115200", "console=tty0"],
         },
         "initramfs": {
             "generator": "mkinitcpio",
