@@ -1,0 +1,48 @@
+# Docker Compose stack for the getarch self-hosted KVM runner.
+#
+# Build + start:   docker compose --env-file .env up -d --build
+# Stop:            docker compose down
+# Logs:            docker compose logs -f
+#
+# The runner registers against the GitHub repo declared in REPO_URL using
+# the short-lived RUNNER_TOKEN. Tokens expire after one hour; only needed
+# at first registration, so set it once and start the container.
+
+services:
+  runner:
+    build:
+      context: .
+      args:
+        RUNNER_VERSION: ${RUNNER_VERSION:-2.319.1}
+    container_name: getarch-runner
+    restart: unless-stopped
+    # /dev/kvm passthrough: the qemu-smoke matrix needs hardware virtualisation.
+    devices:
+      - /dev/kvm:/dev/kvm
+    # SYS_PTRACE lets QEMU's gdbstub / strace-based debugging work if needed.
+    cap_add:
+      - SYS_PTRACE
+    # Environment variables (see .env.example for what each does).
+    environment:
+      REPO_URL: ${REPO_URL}
+      RUNNER_TOKEN: ${RUNNER_TOKEN}
+      RUNNER_NAME: ${RUNNER_NAME:-}
+      RUNNER_LABELS: ${RUNNER_LABELS:-self-hosted,Linux,X64,kvm}
+    volumes:
+      # Persist the runner's _work directory across container restarts so
+      # GitHub's setup-uv cache and the cached Arch ISO (~/.cache/getarch-qemu)
+      # survive between jobs.
+      - runner-work:/home/runner/_work
+      - runner-cache:/home/runner/.cache
+    # Reasonable resource ceiling for the QEMU smoke matrix (12 cells, but
+    # GitHub Actions runs at most one job at a time on this runner unless
+    # configured otherwise). Tune for your host.
+    deploy:
+      resources:
+        limits:
+          cpus: "8"
+          memory: 16g
+
+volumes:
+  runner-work:
+  runner-cache:
