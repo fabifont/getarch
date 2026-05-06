@@ -39,8 +39,7 @@ def _is_cacheable(command: Command) -> bool:
         return False
     argv = command.argv
     return any(
-        len(prefix) <= len(argv) and argv[: len(prefix)] == prefix
-        for prefix in CACHEABLE_PREFIXES
+        len(prefix) <= len(argv) and argv[: len(prefix)] == prefix for prefix in CACHEABLE_PREFIXES
     )
 
 

@@ -73,16 +73,8 @@ class ZramStrategy:
 
     def commands(self) -> tuple[Command, ...]:
         conf_path = self.mount_root / "etc/systemd/zram-generator.conf"
-        size_value = (
-            f"{self.size_mib}MiB"
-            if self.size_mib is not None
-            else "min(ram, 8192)"
-        )
-        conf_text = (
-            "[zram0]\n"
-            f"zram-size = {size_value}\n"
-            "compression-algorithm = zstd\n"
-        )
+        size_value = f"{self.size_mib}MiB" if self.size_mib is not None else "min(ram, 8192)"
+        conf_text = f"[zram0]\nzram-size = {size_value}\ncompression-algorithm = zstd\n"
         return (
             Command(
                 argv=("install", "-Dm644", "/dev/stdin", str(conf_path)),

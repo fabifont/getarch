@@ -26,17 +26,13 @@ def require_destructive_confirmation(
     summary = ", ".join(s.id for s in plan.destructive_steps)
     text = f"Plan contains destructive steps ({summary})."
     if mounts_summary:
-        text += (
-            f" WARNING: target disk has mounted partitions: "
-            f"{', '.join(mounts_summary)}."
-        )
+        text += f" WARNING: target disk has mounted partitions: {', '.join(mounts_summary)}."
     if existing_filesystems:
         rendered = ", ".join(f"{name}={fs}" for name, fs in existing_filesystems)
         text += f" Existing filesystems on target disk will be wiped: {rendered}."
         if any(fs == "btrfs" for _name, fs in existing_filesystems):
             text += (
-                " (btrfs detected — any subvolumes / snapper snapshots on "
-                "this disk will be lost.)"
+                " (btrfs detected — any subvolumes / snapper snapshots on this disk will be lost.)"
             )
     text += " Proceed? "
     if not prompt(text):

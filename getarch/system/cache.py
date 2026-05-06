@@ -55,7 +55,7 @@ class TimedCache:
             return None
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except OSError, json.JSONDecodeError:
             return None
         ts = payload.get("ts")
         stdout = payload.get("stdout")
@@ -97,8 +97,7 @@ class TimedCache:
         import hashlib  # noqa: PLC0415
 
         head = Path(argv[0]).name if argv else "empty"
-        safe_head = "".join(ch if ch.isalnum() or ch in "-_." else "_"
-                            for ch in head)[:32] or "cmd"
+        safe_head = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in head)[:32] or "cmd"
         digest = hashlib.sha256(
             "\x00".join(argv).encode("utf-8"),
         ).hexdigest()[:16]

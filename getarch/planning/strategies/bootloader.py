@@ -98,10 +98,7 @@ class SystemdBootStrategy:
             if self.encryption.fido2_unlock:
                 luks_options.append("fido2-device=auto")
             params.append(f"rd.luks.options={','.join(luks_options)}")
-            root = (
-                self.root_device
-                or f"/dev/mapper/{self.encryption.mapper_name}"
-            )
+            root = self.root_device or f"/dev/mapper/{self.encryption.mapper_name}"
             params.append(f"root={root}")
         else:
             params.append(f"root=LABEL={self.root_label}")
@@ -143,8 +140,8 @@ class GrubStrategy:
         defaults_path = self.mount_root / "etc/default/grub"
         cmdline = self._cmdline()
         defaults_text = (
-            f'GRUB_DEFAULT=0\n'
-            f'GRUB_TIMEOUT={self.spec.timeout_seconds}\n'
+            f"GRUB_DEFAULT=0\n"
+            f"GRUB_TIMEOUT={self.spec.timeout_seconds}\n"
             f'GRUB_DISTRIBUTOR="Arch"\n'
             f'GRUB_CMDLINE_LINUX_DEFAULT="{cmdline}"\n'
             f'GRUB_PRELOAD_MODULES="part_gpt part_msdos"\n'
@@ -173,10 +170,7 @@ class GrubStrategy:
                     argv=(
                         "sh",
                         "-c",
-                        (
-                            f"printf 'GRUB_ENABLE_CRYPTODISK=y\\n' "
-                            f">> {defaults_path}"
-                        ),
+                        (f"printf 'GRUB_ENABLE_CRYPTODISK=y\\n' >> {defaults_path}"),
                     ),
                     description="enable cryptodisk in /etc/default/grub",
                 ),
@@ -197,17 +191,11 @@ class GrubStrategy:
             # header= via the cryptdevice= argument; the systemd
             # `sd-encrypt` hook reads `rd.luks.options=header=`. Emit
             # both so either initramfs flavour boots.
-            cryptdevice = (
-                f"cryptdevice={self.crypt_partition_path}:"
-                f"{self.encryption.mapper_name}"
-            )
+            cryptdevice = f"cryptdevice={self.crypt_partition_path}:{self.encryption.mapper_name}"
             if self.encryption.header_path:
                 cryptdevice = f"{cryptdevice}:header={self.encryption.header_path}"
             params.append(cryptdevice)
-            root = (
-                self.root_device
-                or f"/dev/mapper/{self.encryption.mapper_name}"
-            )
+            root = self.root_device or f"/dev/mapper/{self.encryption.mapper_name}"
             params.append(f"root={root}")
             luks_options: list[str] = []
             if self.encryption.header_path:
@@ -255,21 +243,15 @@ class UkiStrategy:
     root_label: str = "system"
 
     def commands(self) -> tuple[Command, ...]:
-        preset_path = (
-            self.mount_root
-            / "etc/mkinitcpio.d"
-            / f"{self.kernel.kind.value}.preset"
-        )
+        preset_path = self.mount_root / "etc/mkinitcpio.d" / f"{self.kernel.kind.value}.preset"
         cmdline_path = self.mount_root / "etc/kernel/cmdline"
-        uki_path = (
-            f"/boot/EFI/Linux/{self.spec.entry_id}-{self.kernel.kind.value}.efi"
-        )
+        uki_path = f"/boot/EFI/Linux/{self.spec.entry_id}-{self.kernel.kind.value}.efi"
         preset_text = (
-            f"ALL_kver=\"/boot/{self.kernel.image_filename}\"\n"
+            f'ALL_kver="/boot/{self.kernel.image_filename}"\n'
             f"ALL_microcode=()\n"
             f"PRESETS=('default')\n"
-            f"default_uki=\"{uki_path}\"\n"
-            f"default_options=\"--splash /usr/share/systemd/bootctl/splash-arch.bmp\"\n"
+            f'default_uki="{uki_path}"\n'
+            f'default_options="--splash /usr/share/systemd/bootctl/splash-arch.bmp"\n'
         )
         cmds: list[Command] = []
         if self.encryption.kind is EncryptionKind.LUKS2:
@@ -332,10 +314,7 @@ class UkiStrategy:
 
     def _cmdline_with_uuid_placeholder(self) -> str:
         # The script substitutes ${LUKS_UUID} via the bash heredoc.
-        root = (
-            self.root_device
-            or f"/dev/mapper/{self.encryption.mapper_name}"
-        )
+        root = self.root_device or f"/dev/mapper/{self.encryption.mapper_name}"
         params: list[str] = [
             f"rd.luks.name=${{LUKS_UUID}}={self.encryption.mapper_name}",
             f"root={root}",
@@ -380,8 +359,8 @@ class GrubBiosStrategy:
         defaults_path = self.mount_root / "etc/default/grub"
         cmdline = self._cmdline()
         defaults_text = (
-            f'GRUB_DEFAULT=0\n'
-            f'GRUB_TIMEOUT={self.spec.timeout_seconds}\n'
+            f"GRUB_DEFAULT=0\n"
+            f"GRUB_TIMEOUT={self.spec.timeout_seconds}\n"
             f'GRUB_DISTRIBUTOR="Arch"\n'
             f'GRUB_CMDLINE_LINUX_DEFAULT="{cmdline}"\n'
             f'GRUB_PRELOAD_MODULES="part_gpt part_msdos"\n'
@@ -408,10 +387,7 @@ class GrubBiosStrategy:
                     argv=(
                         "sh",
                         "-c",
-                        (
-                            f"printf 'GRUB_ENABLE_CRYPTODISK=y\\n' "
-                            f">> {defaults_path}"
-                        ),
+                        (f"printf 'GRUB_ENABLE_CRYPTODISK=y\\n' >> {defaults_path}"),
                     ),
                     description="enable cryptodisk in /etc/default/grub",
                 ),
@@ -428,17 +404,11 @@ class GrubBiosStrategy:
     def _cmdline(self) -> str:
         params: list[str] = []
         if self.encryption.kind is EncryptionKind.LUKS2:
-            cryptdevice = (
-                f"cryptdevice={self.crypt_partition_path}:"
-                f"{self.encryption.mapper_name}"
-            )
+            cryptdevice = f"cryptdevice={self.crypt_partition_path}:{self.encryption.mapper_name}"
             if self.encryption.header_path:
                 cryptdevice = f"{cryptdevice}:header={self.encryption.header_path}"
             params.append(cryptdevice)
-            root = (
-                self.root_device
-                or f"/dev/mapper/{self.encryption.mapper_name}"
-            )
+            root = self.root_device or f"/dev/mapper/{self.encryption.mapper_name}"
             params.append(f"root={root}")
             luks_options: list[str] = []
             if self.encryption.header_path:

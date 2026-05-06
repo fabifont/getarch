@@ -35,8 +35,14 @@ def test_every_code_has_a_docs_stub(code: str) -> None:
 
 def test_subclasses_have_distinct_codes() -> None:
     classes: list[type[GetarchError]] = [
-        GetarchError, ConfigError, SyntacticConfigError, SemanticConfigError,
-        EnvironmentError, DiscoveryError, PlanError, CommandFailedError,
+        GetarchError,
+        ConfigError,
+        SyntacticConfigError,
+        SemanticConfigError,
+        EnvironmentError,
+        DiscoveryError,
+        PlanError,
+        CommandFailedError,
     ]
     codes = {c.code for c in classes}
     assert len(codes) == len(classes), "every error class needs a unique code"
@@ -51,7 +57,9 @@ def test_get_arch_error_carries_optional_hint() -> None:
 
 def test_command_failed_error_keeps_existing_shape() -> None:
     exc = CommandFailedError(
-        argv=("pacstrap", "/mnt"), returncode=1, stderr="oops",
+        argv=("pacstrap", "/mnt"),
+        returncode=1,
+        stderr="oops",
     )
     assert exc.code == "E400"
     assert exc.argv == ("pacstrap", "/mnt")

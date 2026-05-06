@@ -28,8 +28,10 @@ def test_kdump_appends_crashkernel_to_bootloader_cmdline() -> None:
         mount_root=Path("/mnt"),
     )
     boot = next(s for s in plan.steps if s.id == "bootloader")
-    flat = " ".join(arg for c in boot.commands for arg in c.argv) + " " + " ".join(
-        c.input or "" for c in boot.commands
+    flat = (
+        " ".join(arg for c in boot.commands for arg in c.argv)
+        + " "
+        + " ".join(c.input or "" for c in boot.commands)
     )
     assert "crashkernel=256M,high" in flat
 
@@ -47,8 +49,10 @@ def test_kdump_user_supplied_crashkernel_wins() -> None:
         mount_root=Path("/mnt"),
     )
     boot = next(s for s in plan.steps if s.id == "bootloader")
-    flat = " ".join(arg for c in boot.commands for arg in c.argv) + " " + " ".join(
-        c.input or "" for c in boot.commands
+    flat = (
+        " ".join(arg for c in boot.commands for arg in c.argv)
+        + " "
+        + " ".join(c.input or "" for c in boot.commands)
     )
     assert "crashkernel=512M,low" in flat
     # The default 256M,high must NOT be appended on top of the user's
@@ -91,8 +95,10 @@ def test_kdump_disabled_does_not_touch_cmdline_or_packages() -> None:
         mount_root=Path("/mnt"),
     )
     boot = next(s for s in plan.steps if s.id == "bootloader")
-    flat = " ".join(arg for c in boot.commands for arg in c.argv) + " " + " ".join(
-        c.input or "" for c in boot.commands
+    flat = (
+        " ".join(arg for c in boot.commands for arg in c.argv)
+        + " "
+        + " ".join(c.input or "" for c in boot.commands)
     )
     assert "crashkernel" not in flat
     pkgs_step = next(s for s in plan.steps if s.id == "packages")

@@ -26,9 +26,7 @@ def test_microcode_resolves_intel(tmp_path: Path, mocker: MockerFixture) -> None
     assert "intel-ucode" in result.output
 
 
-def test_microcode_resolves_none_for_unknown_vendor(
-    tmp_path: Path, mocker: MockerFixture
-) -> None:
+def test_microcode_resolves_none_for_unknown_vendor(tmp_path: Path, mocker: MockerFixture) -> None:
     mocker.patch(
         "getarch.cli.commands.microcode.IsoEnvironment.cpu_vendor",
         return_value="HygonGenuine",

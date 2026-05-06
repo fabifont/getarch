@@ -59,8 +59,7 @@ def _resolve_environment(
 ) -> tuple[EnvironmentReport | None, str | None]:
     if skip_environment_preflight:
         console.log(
-            "[yellow]skipping environment preflight "
-            "(--skip-environment-preflight)[/yellow]",
+            "[yellow]skipping environment preflight (--skip-environment-preflight)[/yellow]",
         )
         try:
             vendor = IsoEnvironment(
@@ -187,8 +186,7 @@ def _flush_audit_on_failure(
         log_path.write_text(audit_runner.render(), encoding="utf-8")
     except OSError as exc:
         console.log(
-            f"[yellow]warning: could not write audit log to "
-            f"{log_path}: {exc}[/yellow]",
+            f"[yellow]warning: could not write audit log to {log_path}: {exc}[/yellow]",
         )
 
 
@@ -224,7 +222,7 @@ def run(
         help=(
             "Path to a key file (mode 0600) used to append an HMAC-SHA256 "
             "trailer to <mount>/var/log/getarch.log. Verify with "
-            "`openssl dgst -sha256 -hmac \"$(cat KEY)\" -binary` over the "
+            '`openssl dgst -sha256 -hmac "$(cat KEY)" -binary` over the '
             "log body excluding the trailer line."
         ),
     ),
@@ -253,7 +251,8 @@ def run(
                 console=console,
             )
             target = next(
-                (d for d in disks if d.path.as_posix() == cfg.disk.path), None,
+                (d for d in disks if d.path.as_posix() == cfg.disk.path),
+                None,
             )
             if target is None:
                 raise PlanError(f"target disk {cfg.disk.path} not present")
@@ -270,9 +269,7 @@ def run(
             force=force,
             prompt=console.confirm,
             mounts_summary=report.mountpoints_seen if report else (),
-            existing_filesystems=(
-                report.existing_filesystems_seen if report else ()
-            ),
+            existing_filesystems=(report.existing_filesystems_seen if report else ()),
         )
         hmac_key_bytes: bytes | None = None
         if audit_hmac_key is not None:
@@ -316,7 +313,9 @@ def run(
         except GetarchError:
             if not dry_run:
                 _flush_audit_on_failure(
-                    audit_runner, mount_root=mount_root, console=console,
+                    audit_runner,
+                    mount_root=mount_root,
+                    console=console,
                 )
             raise
     except GetarchError as exc:

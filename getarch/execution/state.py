@@ -50,9 +50,7 @@ class PipelineState:
         last_error_raw = payload.get("last_error")
         last_error = str(last_error_raw) if isinstance(last_error_raw, str) else None
         fingerprint_raw = payload.get("plan_fingerprint")
-        plan_fingerprint = (
-            str(fingerprint_raw) if isinstance(fingerprint_raw, str) else None
-        )
+        plan_fingerprint = str(fingerprint_raw) if isinstance(fingerprint_raw, str) else None
         blob_raw = payload.get("plan_blob")
         plan_blob = str(blob_raw) if isinstance(blob_raw, str) else None
         return cls(

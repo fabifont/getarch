@@ -68,7 +68,9 @@ class LoggingRunner:
         if self.hmac_key is None:
             return body
         digest = hmac.new(
-            self.hmac_key, body.encode("utf-8"), sha256,
+            self.hmac_key,
+            body.encode("utf-8"),
+            sha256,
         ).hexdigest()
         trailer = json.dumps(
             {
@@ -83,9 +85,7 @@ class LoggingRunner:
 
     @staticmethod
     def _render(command: Command, result: CommandResult, chroot_path: str) -> str:
-        argv = (
-            (command.argv[0], "<redacted>") if command.sensitive else command.argv
-        )
+        argv = (command.argv[0], "<redacted>") if command.sensitive else command.argv
         record = {
             "schema_version": AUDIT_SCHEMA_VERSION,
             "type": "command",

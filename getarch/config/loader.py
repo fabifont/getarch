@@ -79,6 +79,5 @@ def _parse(path: Path, text: str) -> object:
         except json.JSONDecodeError as exc:
             raise SyntacticConfigError(f"config is not valid JSON: {exc}") from exc
     raise SyntacticConfigError(
-        f"unsupported config file extension {suffix!r}; "
-        "use .json, .yaml/.yml, or .toml",
+        f"unsupported config file extension {suffix!r}; use .json, .yaml/.yml, or .toml",
     )

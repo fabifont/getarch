@@ -19,14 +19,18 @@ def _write_quirk(root: Path, name: str, body: str) -> None:
 
 
 def test_registry_loads_yaml_entries(tmp_path: Path) -> None:
-    _write_quirk(tmp_path, "x1", """
+    _write_quirk(
+        tmp_path,
+        "x1",
+        """
 id: x1-tpm
 description: x1 tpm
 match:
   pci_subsystem: 17AA:225F
 modules:
   - tpm_tis
-""")
+""",
+    )
     reg = QuirkRegistry.load_from(tmp_path)
     assert len(reg.quirks) == 1
     quirk = reg.quirks[0]
@@ -36,13 +40,17 @@ modules:
 
 
 def test_registry_find_matches_is_case_insensitive(tmp_path: Path) -> None:
-    _write_quirk(tmp_path, "x1", """
+    _write_quirk(
+        tmp_path,
+        "x1",
+        """
 id: x1-tpm
 match:
   pci_subsystem: 17aa:225f
 modules:
   - tpm_tis
-""")
+""",
+    )
     reg = QuirkRegistry.load_from(tmp_path)
     matches = reg.find_matches(["17AA:225F"])
     assert len(matches) == 1
@@ -83,7 +91,10 @@ def test_lspci_pci_ids_parses_mm_format() -> None:
 
 
 def test_planner_appends_quirk_modules_to_initramfs(tmp_path: Path) -> None:
-    _write_quirk(tmp_path, "demo", """
+    _write_quirk(
+        tmp_path,
+        "demo",
+        """
 id: demo
 match:
   pci_subsystem: dead:beef
@@ -91,10 +102,12 @@ modules:
   - tpm_tis
 cmdline:
   - amd_iommu=on
-""")
+""",
+    )
     # Patch the module-level cache via reload so the planner sees our
     # tmp registry.
     from getarch.planning.planner import set_quirk_registry  # noqa: PLC0415
+
     set_quirk_registry(QuirkRegistry.load_from(tmp_path))
     try:
         payload = deepcopy(EXAMPLES["minimal-ext4"])
@@ -109,8 +122,10 @@ cmdline:
         snippet = initramfs.commands[0].input or ""
         assert "MODULES=(tpm_tis)" in snippet
         boot = next(s for s in plan.steps if s.id == "bootloader")
-        flat = " ".join(arg for c in boot.commands for arg in c.argv) + " " + " ".join(
-            c.input or "" for c in boot.commands
+        flat = (
+            " ".join(arg for c in boot.commands for arg in c.argv)
+            + " "
+            + " ".join(c.input or "" for c in boot.commands)
         )
         assert "amd_iommu=on" in flat
     finally:
@@ -118,14 +133,15 @@ cmdline:
 
 
 def test_planner_rejects_unknown_quirk_id_fail_closed(tmp_path: Path) -> None:
-    """Regression for codex P6 finding: unknown quirk IDs used to no-op
-    silently, leaving the user thinking a hardware fix had been applied
-    when it hadn't. The planner now refuses to build a plan."""
+    """Regression: unknown quirk IDs used to no-op silently, leaving the
+    user thinking a hardware fix had been applied when it hadn't. The
+    planner now refuses to build a plan."""
 
     import pytest  # noqa: PLC0415
 
     from getarch.errors import PlanError  # noqa: PLC0415
     from getarch.planning.planner import set_quirk_registry  # noqa: PLC0415
+
     set_quirk_registry(QuirkRegistry.load_from(tmp_path))
     try:
         payload = deepcopy(EXAMPLES["minimal-ext4"])
@@ -149,5 +165,3 @@ def test_default_registry_loads_shipped_quirks() -> None:
     assert len(reg.quirks) >= 1
     ids = {q.id for q in reg.quirks}
     assert "thinkpad-x1-tpm" in ids
-
-

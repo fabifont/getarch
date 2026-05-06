@@ -66,12 +66,12 @@ class DracutStrategy:
             modules.append("crypt")
         conf_lines = [
             "hostonly=yes",
-            f"add_dracutmodules+=\" {' '.join(modules)} \"",
+            f'add_dracutmodules+=" {" ".join(modules)} "',
             "compress=zstd",
         ]
         if self.extra_modules:
             conf_lines.append(
-                f"force_drivers+=\" {' '.join(self.extra_modules)} \"",
+                f'force_drivers+=" {" ".join(self.extra_modules)} "',
             )
         conf_text = "\n".join(conf_lines) + "\n"
         return (

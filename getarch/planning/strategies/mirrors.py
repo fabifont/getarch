@@ -38,9 +38,7 @@ class ReflectorStrategy:
                     "/etc/pacman.d/mirrorlist",
                     *self.args,
                 ),
-                description=(
-                    "run reflector to update the live ISO mirrorlist before pacstrap"
-                ),
+                description=("run reflector to update the live ISO mirrorlist before pacstrap"),
             ),
         )
 

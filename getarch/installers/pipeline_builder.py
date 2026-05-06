@@ -74,9 +74,7 @@ def build_install_pipeline_steps(
         steps.append(RuntimePreflightStep())
     log_path = mount_root / "var/log/getarch.log"
     audit_step: object | None = (
-        AuditLogStep(audit_runner=audit_runner, log_path=log_path)
-        if not dry_run
-        else None
+        AuditLogStep(audit_runner=audit_runner, log_path=log_path) if not dry_run else None
     )
     wipe_step: object | None = (
         DiskWipeStep(target_disk_path=cfg.disk.path)

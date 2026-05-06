@@ -46,7 +46,7 @@ def _build_syslog_handler(spec: str) -> logging.Handler:
     if spec == "syslog":
         return SysLogHandler(address=_DEFAULT_SYSLOG_ADDRESS)
     if spec.startswith("syslog://"):
-        rest = spec[len("syslog://"):]
+        rest = spec[len("syslog://") :]
         host, _, port = rest.partition(":")
         return SysLogHandler(address=(host, int(port) if port else 514))
     raise ValueError(f"unsupported syslog sink {spec!r}")
@@ -65,7 +65,6 @@ def _build_journald_handler() -> logging.Handler:
     # typed callers. Lazy import keeps startup fast on hosts without
     # python-systemd.
     try:
-
         from systemd.journal import JournalHandler  # type: ignore[import-not-found,import-untyped] # noqa: I001,PLC0415
     except ImportError as exc:
         raise RuntimeError(

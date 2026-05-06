@@ -14,9 +14,7 @@ def test_multilib_uncomments_pacman_conf() -> None:
 def test_extras_appended_to_pacman_conf() -> None:
     cmds = RepositoriesStrategy(
         multilib=False,
-        extras=(
-            RepositoryEntry(name="archzfs", include="/etc/pacman.d/archzfs"),
-        ),
+        extras=(RepositoryEntry(name="archzfs", include="/etc/pacman.d/archzfs"),),
     ).commands()
     flat = " ".join(arg for c in cmds for arg in c.argv)
     assert "archzfs" in flat

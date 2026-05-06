@@ -62,19 +62,16 @@ class QuirkRegistry:
             pci_obj: object = ""
             if isinstance(match_obj, dict):
                 pci_obj = cast("dict[str, object]", match_obj).get(
-                    "pci_subsystem", "",
+                    "pci_subsystem",
+                    "",
                 )
             modules_obj = payload.get("modules", [])
             cmdline_obj = payload.get("cmdline", [])
             modules_list: list[object] = (
-                cast("list[object]", modules_obj)
-                if isinstance(modules_obj, list)
-                else []
+                cast("list[object]", modules_obj) if isinstance(modules_obj, list) else []
             )
             cmdline_list: list[object] = (
-                cast("list[object]", cmdline_obj)
-                if isinstance(cmdline_obj, list)
-                else []
+                cast("list[object]", cmdline_obj) if isinstance(cmdline_obj, list) else []
             )
             registry.quirks.append(
                 Quirk(
@@ -89,10 +86,7 @@ class QuirkRegistry:
 
     def find_matches(self, pci_ids: Iterable[str]) -> tuple[Quirk, ...]:
         seen = {pid.lower() for pid in pci_ids}
-        return tuple(
-            q for q in self.quirks
-            if q.match_pci and q.match_pci.lower() in seen
-        )
+        return tuple(q for q in self.quirks if q.match_pci and q.match_pci.lower() in seen)
 
     def by_id(self, qid: str) -> Quirk | None:
         for q in self.quirks:

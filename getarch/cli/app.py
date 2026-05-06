@@ -115,7 +115,8 @@ app.command("migrate")(migrate_cmd.run)
 
 
 help_app = typer.Typer(
-    name="help", help="In-tree documentation surface (e.g. error codes).",
+    name="help",
+    help="In-tree documentation surface (e.g. error codes).",
     no_args_is_help=True,
 )
 help_app.command("error")(help_error_cmd.run)

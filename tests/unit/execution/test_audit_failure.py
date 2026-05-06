@@ -1,11 +1,11 @@
 """Regression: failed commands MUST appear in the signed audit log.
 
-Codex P6 adversarial review found that ``LoggingRunner.run`` only
-appended to the audit buffer after the inner runner returned. With
-``check=True`` (the default) ``RealRunner`` raises
-``CommandFailedError`` on non-zero exits; the failed command never
-made it into the buffer, so the HMAC trailer signed an audit log
-that silently omitted the operationally most important event.
+``LoggingRunner.run`` previously only appended to the audit buffer
+after the inner runner returned. With ``check=True`` (the default)
+``RealRunner`` raises ``CommandFailedError`` on non-zero exits; the
+failed command never made it into the buffer, so the HMAC trailer
+signed an audit log that silently omitted the operationally most
+important event.
 """
 
 from __future__ import annotations

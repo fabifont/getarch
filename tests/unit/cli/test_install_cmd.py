@@ -54,9 +54,7 @@ def test_install_without_yes_or_force_refuses(tmp_path: Path, mocker: MockerFixt
     assert "declined" in output or "cancel" in output
 
 
-def test_install_skip_environment_preflight_warns(
-    tmp_path: Path, mocker: MockerFixture
-) -> None:
+def test_install_skip_environment_preflight_warns(tmp_path: Path, mocker: MockerFixture) -> None:
     mocker.patch(
         "getarch.cli.commands.install._discover_disks",
         return_value=(Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**33),),
@@ -100,7 +98,8 @@ def test_skip_environment_preflight_does_not_bypass_disk_busy_guard(
             return ("/", "/boot")
 
         def target_disk_filesystems(
-            self, path: str,
+            self,
+            path: str,
         ) -> tuple[tuple[str, str], ...]:
             del path
             return ()
@@ -147,20 +146,14 @@ def test_install_runs_environment_preflight_by_default(
             mountpoints_seen=(),
         )
 
-    mocker.patch(
-        "getarch.cli.commands.install.preflight_environment", side_effect=fake_preflight
-    )
+    mocker.patch("getarch.cli.commands.install.preflight_environment", side_effect=fake_preflight)
     p = _write(tmp_path)
-    result = CliRunner().invoke(
-        app, ["--no-color", "install", str(p), "--dry-run", "--yes"]
-    )
+    result = CliRunner().invoke(app, ["--no-color", "install", str(p), "--dry-run", "--yes"])
     assert result.exit_code == 0
     assert called["n"] == 1
 
 
-def test_install_passes_cpu_vendor_to_planner(
-    tmp_path: Path, mocker: MockerFixture
-) -> None:
+def test_install_passes_cpu_vendor_to_planner(tmp_path: Path, mocker: MockerFixture) -> None:
     mocker.patch(
         "getarch.cli.commands.install._discover_disks",
         return_value=(Disk(path=DiskPath(Path("/dev/sda")), size_bytes=2**33),),
@@ -194,8 +187,6 @@ def test_install_passes_cpu_vendor_to_planner(
     mocker.patch.object(_RealPlanner, "build", spy_build)
 
     p = _write(tmp_path)
-    result = CliRunner().invoke(
-        app, ["--no-color", "install", str(p), "--dry-run", "--yes"]
-    )
+    result = CliRunner().invoke(app, ["--no-color", "install", str(p), "--dry-run", "--yes"])
     assert result.exit_code == 0
     assert captured.get("cpu_vendor") == "GenuineIntel"

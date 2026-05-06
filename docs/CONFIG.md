@@ -12,23 +12,25 @@ This document describes every field in v1.
 |---|---|---|---|---|
 | `version` | int | yes | — | Must be `1`. |
 | `disk` | object | yes | — | Target disk. |
-| `partitioning` | object | yes | — | GPT layout. |
+| `partitioning` | object | yes | — | GPT layout (predefined, `lvm`, or `custom`). |
 | `filesystem` | object | yes | — | Root filesystem. |
-| `encryption` | object | yes | — | None or LUKS2. |
-| `swap` | object | yes | — | None / partition / swapfile. |
+| `encryption` | object | yes | — | None or LUKS2 (with optional TPM2/FIDO2/header/`/home`/swap). |
+| `swap` | object | yes | — | None / partition / swapfile / zram. |
 | `kernel` | object | yes | — | Kernel package selection. |
 | `microcode` | object | yes | — | Auto / intel / amd / none. |
-| `bootloader` | object | yes | — | Currently `systemd-boot`. |
-| `initramfs` | object | yes | — | Currently `mkinitcpio`. |
+| `bootloader` | object | yes | — | `systemd-boot`, `grub`, or `uki`. |
+| `initramfs` | object | yes | — | `mkinitcpio` or `dracut`. |
 | `locale` | object | yes | — | lang/locale/keymap/timezone. |
-| `network` | object | yes | — | Hostname + network backend. |
+| `network` | object | yes | — | Hostname + network backend (incl. networkd VLAN/bridge/bond, iwd PSK, WPA2-Enterprise, WireGuard, headless bootstrap, nftables). |
 | `packages` | list[str] | yes | — | Pacstrap package list (must contain the kernel package). |
 | `services` | object | yes | — | systemd units to enable. |
 | `mirrors` | object | yes | — | Mirror strategy. |
 | `users` | object | yes | — | Root authentication + optional regular users. |
-| `mountpoints` | list | no | `[]` | Extra partlabel→mountpoint pairs. |
+| `mountpoints` | list | no | `[]` | Extra partlabel→mountpoint pairs (read-only attach on disks other than the install target). |
 | `repositories` | object | no | `{}` | multilib + extra pacman repos. |
-| `firmware` | string | no | `"uefi"` | `"uefi"` or `"bios"`. |
+| `firmware` | string | no | `"uefi"` | `"uefi"`, `"bios"`, or `"container"`. |
+| `kdump` | object | no | `{enable: false}` | Kernel crash-dump (kexec + crashkernel cmdline). |
+| `quirks` | object | no | `{enable: []}` | Hardware quirks the user opts into. |
 | `reboot` | bool | no | `false` | Reboot after the install? |
 
 ## `disk`
@@ -38,7 +40,11 @@ This document describes every field in v1.
 ```
 
 * `path` must match `/dev/...` and must point to a *whole* disk (not a partition).
-* `wipe_before`: reserved; the partitioning step always zaps the GPT.
+* `wipe_before` (default `false`): when `true`, a `disk-wipe` step runs
+  `wipefs -a -f` and best-effort `blkdiscard -f` on the disk *after*
+  every non-destructive prerequisite has succeeded and *before* the
+  partitioning step. Useful when the disk has lingering signatures from
+  prior installs that confuse `sgdisk`.
 
 ## `partitioning`
 
@@ -52,9 +58,26 @@ This document describes every field in v1.
 ```
 
 `layout` is one of `efi-root`, `efi-swap-root`, `efi-home-root`,
-`efi-swap-home-root`. `swap_size_mib` is required when the layout includes
-swap. `home_size_mib` may be omitted to let `/home` use the rest of the disk
-(root takes a slice).
+`efi-swap-home-root`, `efi-luksheader-root`, or `efi-swap-luksheader-root`
+(the last two emit a 16 MiB `cryptheader` GPT carrier partition for a
+detached LUKS header).
+
+`swap_size_mib` is required when the layout includes swap.
+`home_size_mib` may be omitted to let `/home` use the rest of the disk
+(root takes a slice). To pin root and let home grow, set
+`root_size_mib` instead — the two are mutually exclusive.
+
+For non-trivial layouts, `partitioning` accepts two alternative payloads
+(both validated at semantic time):
+
+* `lvm: {vg_name, volumes: [...]}` — LVM-on-LUKS. The whole partition
+  becomes one LUKS container; LVM volumes inside hold per-mountpoint
+  filesystems. Planner auto-adds `lvm2` to packages.
+* `custom: list[PartitionSpec]` — fully arbitrary GPT layout on the
+  install target. Each entry has `label`, `size_mib` (or `null` for
+  rest-of-disk), `typecode`, optional `role` ("efi"/"swap"/"root"/"home"),
+  optional `filesystem`, optional `mountpoint`, optional `mount_options`.
+  Planner builds the sgdisk script and wires the per-role strategies.
 
 ### Separate `/home`
 
@@ -122,16 +145,24 @@ Optional unattended-unlock fields (LUKS2 only):
 Encrypted `/home` (when the layout includes a separate home partition):
 
 * `home_kind: "shared-key"` — formats `/home` as a second LUKS2
-  container reusing the root password. **Caveat:** the current crypttab
-  entry uses `none` for the key source, so systemd prompts for the
-  passphrase a second time at boot. A future iteration will derive a
-  keyfile from the unlocked root.
-* `home_kind: "separate-key"` — also requires `home_password`; same
-  prompt-at-boot caveat.
+  container reusing the root password.
+* `home_kind: "separate-key"` — formats `/home` as an independent LUKS2
+  container; requires `home_password`.
+* `home_keyfile: true` — opt-in auto-unlock: an additional 4 KiB random
+  key under `/etc/cryptkey/home.key` (mode 0600, written *inside* the
+  unlocked root) is enrolled into the home LUKS volume; the crypttab
+  entry points at it so `/home` unlocks automatically at boot without a
+  second passphrase prompt. Requires `home_kind != "none"`.
 
-Encrypted swap is **not** yet covered: when both `swap` and `LUKS2` are
-in the layout, the swap partition stays plaintext (data spilling into
-swap can leak from RAM). Tracked under P5.
+Encrypted swap (LUKS2 root + a `swap` partition would otherwise leave
+swap plaintext, leaking anything paged out of RAM):
+
+* `swap.encrypt: true` (when `swap.kind="partition"`) — emits a
+  `crypttab` entry that opens `/dev/<swap>` as a random-key plain
+  dm-crypt mapper at boot; `mkswap`/`swapon` target the mapper, so the
+  partition is re-keyed on every boot and never holds usable plaintext.
+  `systemd-cryptsetup@swapcrypt.service` reads from crypttab on each
+  boot.
 
 > Storing a plaintext password in the JSON is unsafe. The roadmap covers
 > prompt-only and secret-file modes that avoid this.
@@ -326,11 +357,19 @@ the new repos.
 
 ## `firmware`
 
-`"uefi"` (default) or `"bios"`. With `"bios"`, the planner switches
-the partitioning strategy to a GPT layout with a 1MiB BIOS-boot
-partition (no ESP), and the bootloader strategy to GRUB
-(`grub-install --target=i386-pc <disk>`). `bootloader.kind` must be
-`"grub"` for BIOS — the semantic validator refuses any other choice.
+`"uefi"` (default), `"bios"`, or `"container"`.
+
+* **uefi** — default Arch installation flow on UEFI hardware.
+* **bios** — switches the partitioning strategy to a GPT layout with a
+  1MiB BIOS-boot partition (no ESP) and the bootloader strategy to GRUB
+  (`grub-install --target=i386-pc <disk>`). `bootloader.kind` must be
+  `"grub"` for BIOS — the semantic validator refuses any other choice.
+* **container** — install into a pre-mounted directory passed via
+  `--mount-root` (no disks touched). The pipeline skips disk-busy
+  guard, runtime network bootstrap, runtime preflight, partitioning,
+  bootloader install, initramfs regeneration, and cleanup; everything
+  else (pacstrap, system config, users, services) still runs into the
+  chroot. The chroot caller is responsible for the keyring and network.
 
 ## Filesystem snapshots (snapper)
 
@@ -376,8 +415,9 @@ The PSK is marked sensitive so the audit log redacts it.
 
 ## `mountpoints`
 
-Custom partlabel→mountpoint pairs for partitions on the target disk that
-are *not* created by the planner.
+Mount existing partitions by partlabel under the new system. The
+planner does **not** format these — pre-create the filesystem yourself
+before running getarch.
 
 ```json
 {
@@ -385,18 +425,60 @@ are *not* created by the planner.
     {
       "partition_label": "data",
       "mountpoint": "/srv",
-      "filesystem": "ext4",
-      "mount_options": ["noatime"],
-      "create": true
+      "mount_options": ["noatime"]
     }
   ]
 }
 ```
 
-Reserved partition labels (`EFI`, `system`, `cryptsystem`, `swap`, `home`)
-and reserved mountpoints (`/`, `/boot`, `/home`) are rejected by the
-semantic validator. When `create=true`, the planner formats the partition
-with the chosen filesystem and labels it with `partition_label`.
+* `partition_label` must match `^[a-zA-Z0-9_.-]+$` and must resolve
+  (via `/dev/disk/by-partlabel/<label>`) to a partition on a disk
+  *other than* `disk.path`. Preflight refuses same-disk partlabels
+  because the partitioning step zaps the target disk's GPT, leaving
+  any reference unsafe to attach.
+* `mountpoint` must start with `/`. Reserved mountpoints (`/`,
+  `/boot`, `/home`) and reserved partition labels (`EFI`, `system`,
+  `cryptsystem`, `swap`, `home`, `cryptheader`) are rejected by the
+  semantic validator.
+* `mount_options` — optional list passed straight through to `mount -o`.
+
+For partitions on the install target itself, declare them in
+`partitioning.custom` (which formats and mounts in one go).
+
+## `kdump`
+
+Kernel crash-dump (kdump) configuration. When enabled, the planner
+adds `crashkernel=<value>` to the bootloader cmdline and enables
+`kdump.service` so kexec captures a vmcore on panic.
+
+```json
+{ "kdump": { "enable": true, "crashkernel": "256M,high" } }
+```
+
+* `enable` (default `false`) — opt-in toggle.
+* `crashkernel` (default `"256M,high"`) — must match
+  `^[0-9]+[KkMmGg](,[a-z]+)?$`. Passed verbatim to the bootloader
+  cmdline.
+
+Requires a bootloader strategy that lets us mutate the cmdline
+(`systemd-boot` or `grub`); UKI is rejected because the cmdline is
+baked into the EFI image.
+
+## `quirks`
+
+Hardware quirks the user opts into. The planner walks
+`getarch/quirks/*.yaml` and applies any quirk whose `id` is listed
+here: contributed kernel modules land in the mkinitcpio `MODULES=()`
+line (or dracut `force_drivers+=`); contributed cmdline params get
+appended to the bootloader cmdline. Preflight surfaces detected
+quirks that are *not* enabled as a warning so users learn about
+applicable fixes.
+
+```json
+{ "quirks": { "enable": ["thinkpad-x1c11", "intel-iwlwifi-be"] } }
+```
+
+Unknown quirk IDs are rejected fail-closed by the planner.
 
 ## `reboot`
 
@@ -404,22 +486,34 @@ with the chosen filesystem and labels it with `partition_label`.
 
 ## Other commands
 
-* `getarch diff CONFIG_A CONFIG_B` — render a unified diff of the plans
-  built from two configs. Disk discovery is skipped; the planner uses a
-  stub `Disk` of the path declared in each config.
-* `getarch tui CONFIG` — Textual TUI for browsing a config + plan
-  read-only. Requires `getarch[tui]` (installs `textual`).
-* `getarch tui CONFIG --execute` — live install screen (currently
-  dry-run only; modal confirmations land in a follow-up).
+* `getarch validate CONFIG` — schema + semantic validation only.
+* `getarch plan CONFIG` — render the plan (text or `--json`) without
+  executing it.
+* `getarch schema` — emit the Pydantic-generated JSON Schema for the
+  current config version.
+* `getarch examples [NAME]` — list example names or print a bundled
+  example (e.g. `minimal-ext4`, `encrypted-btrfs`, `full`).
+* `getarch discover` — summarise the current ISO environment (disks,
+  UEFI, vendor, counts).
 * `getarch verify CONFIG` — re-run preflight checks against the host
   without building or executing the plan.
 * `getarch microcode CONFIG` — print the resolved `MicrocodeKind` for
   this host given the config (helps debug `microcode.kind="auto"`).
+* `getarch migrate CONFIG` — rewrite a v1 config under the v2 schema
+  routing.
+* `getarch help error <code>` — open the per-error help page for a
+  stable error code (e.g. `E101`).
 * `getarch diff CONFIG_A CONFIG_B` — unified plan diff between two
   configs.
 * `getarch diff CONFIG --against-installed` — diff the new plan
   against the plan persisted at `<mount>/var/log/getarch.state.json`
   from the previous install.
+* `getarch tui CONFIG` — Textual TUI for browsing a config + plan
+  read-only. Requires `getarch[tui]` (installs `textual`).
+* `getarch tui CONFIG --execute` — live install screen with modal
+  destructive confirmations and password prompt callbacks. Shares the
+  install pipeline assembly with `getarch install` so safety guarantees
+  cannot drift between surfaces.
 
 ## Install command flags
 
@@ -448,3 +542,19 @@ with the chosen filesystem and labels it with `partition_label`.
   file doesn't silently change behaviour). Caveat: resume works for steps
   that were idempotent or fully completed; partial filesystem state from
   a half-finished partitioning step is your problem to clean up.
+* `--force-fingerprint` — allow `--resume` to continue when the
+  persisted plan fingerprint differs from the current plan. Off by
+  default; without it, fingerprint mismatch refuses to resume so a
+  changed config never silently splices into an old run.
+* `--audit-hmac-key <env-var-or-path>` — sign the audit log with an
+  HMAC-SHA256 trailer. Accepts an env-var name (read from process
+  env) or a path to a key file.
+* `--log-sink <syslog://host:port|journald>` — fan logs out to a
+  remote sink. Default is the stdlib `logging` console handler.
+* `--log-format {text,json}` — switch the in-process log records to
+  JSON Lines (helpful when piping into a log shipper).
+* `--json` — switch the CLI's user-facing output to JSON Lines (plan
+  output, validation results, etc.). Independent of `--log-format`.
+* `--no-color` — disable rich terminal colors.
+* `--log-level {DEBUG,INFO,WARNING,ERROR}` — root log level.
+* `--verbose` / `--debug` — convenience shortcuts for `INFO`/`DEBUG`.

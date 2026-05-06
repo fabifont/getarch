@@ -176,7 +176,8 @@ def _probe_first_mirror(static_path: Path) -> None:
     request = urllib.request.Request(probe_url, method="HEAD")  # noqa: S310
     try:
         with urllib.request.urlopen(  # noqa: S310
-            request, timeout=_MIRROR_PROBE_TIMEOUT_SECONDS,
+            request,
+            timeout=_MIRROR_PROBE_TIMEOUT_SECONDS,
         ) as response:
             status = response.status
     except (urllib.error.URLError, OSError, TimeoutError) as exc:
@@ -234,8 +235,7 @@ def _assert_mountpoints(cfg: Config) -> None:
             resolved = link.resolve(strict=True)
         except FileNotFoundError as exc:
             raise _EnvErr(
-                f"mountpoint partlabel {mp.partition_label!r} not present on "
-                f"this system",
+                f"mountpoint partlabel {mp.partition_label!r} not present on this system",
             ) from exc
         # `resolved` is e.g. /dev/sdb1 — strip the trailing partition index
         # to get the parent disk name (sdb, nvme0n1, mmcblk0, etc.).

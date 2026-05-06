@@ -36,7 +36,8 @@ def test_wipefs_failure_fails_step() -> None:
     runner = FakeRunner(
         responses={
             ("wipefs", "-a", "-f", "/dev/sda"): FakeResponse(
-                returncode=1, stderr="boom",
+                returncode=1,
+                stderr="boom",
             ),
         },
     )

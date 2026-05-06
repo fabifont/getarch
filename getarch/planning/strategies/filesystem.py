@@ -42,9 +42,7 @@ class Ext4Strategy:
                         self.spec.home_label,
                         self.home_partition,
                     ),
-                    description=(
-                        f"create ext4 /home filesystem labeled {self.spec.home_label}"
-                    ),
+                    description=(f"create ext4 /home filesystem labeled {self.spec.home_label}"),
                 ),
             )
         cmds.append(
@@ -119,9 +117,7 @@ class BtrfsStrategy:
                         self.spec.home_label,
                         self.home_partition,
                     ),
-                    description=(
-                        f"create btrfs /home filesystem labeled {self.spec.home_label}"
-                    ),
+                    description=(f"create btrfs /home filesystem labeled {self.spec.home_label}"),
                 ),
             )
         cmds.append(

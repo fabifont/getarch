@@ -5,9 +5,7 @@ from getarch.system.iso import OsReleaseIso
 
 def test_arch_iso_recognised(tmp_path: Path) -> None:
     f = tmp_path / "os-release"
-    f.write_text(
-        'NAME="Arch Linux"\nID=arch\nIMAGE_ID=archlinux\nIMAGE_VERSION=2026.04\n'
-    )
+    f.write_text('NAME="Arch Linux"\nID=arch\nIMAGE_ID=archlinux\nIMAGE_VERSION=2026.04\n')
     assert OsReleaseIso(path=f).is_arch_iso() is True
 
 

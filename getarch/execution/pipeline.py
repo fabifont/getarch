@@ -49,9 +49,7 @@ class Pipeline:
     def run(self, ctx: ExecutionContext) -> tuple[StepResult, ...]:
         state = PipelineState(
             completed=[
-                sid
-                for sid in self.initial_state.completed
-                if sid not in _NON_RESUMABLE_STEP_IDS
+                sid for sid in self.initial_state.completed if sid not in _NON_RESUMABLE_STEP_IDS
             ],
             last_error=self.initial_state.last_error,
             plan_fingerprint=self.initial_state.plan_fingerprint,

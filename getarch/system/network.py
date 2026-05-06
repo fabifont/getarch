@@ -18,7 +18,7 @@ class SocketNetwork:
             socket.setdefaulttimeout(self.timeout_seconds)
             try:
                 socket.getaddrinfo(host, None)
-            except (socket.gaierror, OSError, TimeoutError):
+            except socket.gaierror, OSError, TimeoutError:
                 return False
             return True
         finally:

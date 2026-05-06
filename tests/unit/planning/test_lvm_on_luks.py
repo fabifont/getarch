@@ -34,8 +34,20 @@ def _lvm_payload() -> dict[str, object]:
     assert isinstance(pkgs_in, list)
     pkgs: list[str] = [*pkgs_in, "lvm2", "e2fsprogs"]
     payload["packages"] = pkgs
-    hooks = ["base", "systemd", "autodetect", "modconf", "kms", "keyboard",
-             "sd-vconsole", "block", "sd-encrypt", "lvm2", "filesystems", "fsck"]
+    hooks = [
+        "base",
+        "systemd",
+        "autodetect",
+        "modconf",
+        "kms",
+        "keyboard",
+        "sd-vconsole",
+        "block",
+        "sd-encrypt",
+        "lvm2",
+        "filesystems",
+        "fsck",
+    ]
     payload["initramfs"] = {"generator": "mkinitcpio", "hooks": hooks}
     return payload
 
@@ -100,9 +112,7 @@ def test_lvm_mounting_step_orders_root_first() -> None:
         mount_root=Path("/mnt"),
     )
     mounting = next(s for s in plan.steps if s.id == "mounting")
-    mount_targets = [
-        c.argv[-1] for c in mounting.commands if c.argv[0] == "mount"
-    ]
+    mount_targets = [c.argv[-1] for c in mounting.commands if c.argv[0] == "mount"]
     assert mount_targets[0] == "/mnt"
     assert "/mnt/home" in mount_targets
     assert "/mnt/var" in mount_targets
@@ -121,9 +131,7 @@ def test_lvm_root_lv_can_be_named_anything() -> None:
     # genfstab runs against the mounted /mnt; just verify the LV got
     # mounted under /mnt by checking the mounting step.
     mounting = next(s for s in plan.steps if s.id == "mounting")
-    assert any(
-        c.argv == ("mount", "/dev/system/rootfs", "/mnt") for c in mounting.commands
-    )
+    assert any(c.argv == ("mount", "/dev/system/rootfs", "/mnt") for c in mounting.commands)
     assert fstab.id == "fstab"
 
 

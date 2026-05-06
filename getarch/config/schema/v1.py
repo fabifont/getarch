@@ -186,9 +186,7 @@ class EncryptionConfig(_Frozen):
             raise ValueError(
                 "luks2 requires a password (use prompt or secret-file in future)",
             )
-        if self.kind == "none" and (
-            self.tpm2_unlock or self.fido2_unlock or self.header_path
-        ):
+        if self.kind == "none" and (self.tpm2_unlock or self.fido2_unlock or self.header_path):
             raise ValueError(
                 "tpm2_unlock/fido2_unlock/header_path require encryption.kind='luks2'",
             )
@@ -387,11 +385,7 @@ class NetworkConfig(_Frozen):
     systemd_networkd_links: list[SystemdNetworkdLink] = Field(default_factory=list)
     iwd_networks: list[IwdNetworkConfig] = Field(default_factory=list)
     bootstrap: (
-        WifiBootstrap
-        | WiredBootstrap
-        | WifiEnterpriseBootstrap
-        | WireguardBootstrap
-        | None
+        WifiBootstrap | WiredBootstrap | WifiEnterpriseBootstrap | WireguardBootstrap | None
     ) = Field(default=None)
     firewall_nftables_rules: list[str] = Field(default_factory=list)
 

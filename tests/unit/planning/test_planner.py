@@ -173,8 +173,7 @@ def test_planner_with_home_partition_layout_btrfs_drops_home_subvol() -> None:
     assert ("mkfs.btrfs", "-f", "-L", "home", "/dev/disk/by-partlabel/home") in argvs
     # @home subvolume must be dropped (separate filesystem now)
     assert all(
-        not (a[:3] == ("btrfs", "subvolume", "create") and a[3].endswith("@home"))
-        for a in argvs
+        not (a[:3] == ("btrfs", "subvolume", "create") and a[3].endswith("@home")) for a in argvs
     )
 
 

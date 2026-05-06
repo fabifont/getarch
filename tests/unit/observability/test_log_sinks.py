@@ -15,6 +15,7 @@ def _reset(logger: logging.Logger) -> None:
     if hasattr(logger, "_getarch_configured"):
         delattr(logger, "_getarch_configured")
     import contextlib  # noqa: PLC0415
+
     for h in list(logger.handlers):
         with contextlib.suppress(Exception):
             h.close()

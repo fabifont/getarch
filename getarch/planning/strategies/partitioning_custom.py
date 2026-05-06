@@ -36,8 +36,7 @@ class SgdiskCustomStrategy:
                     Command(
                         argv=("sgdisk", f"--new={idx}:0:{end}", path),
                         description=(
-                            f"create partition {idx} ({p.label}, {p.typecode}, "
-                            f"role={p.role})"
+                            f"create partition {idx} ({p.label}, {p.typecode}, role={p.role})"
                         ),
                     ),
                     Command(

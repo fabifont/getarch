@@ -26,14 +26,7 @@ class NftablesStrategy:
             return ()
         target = self.mount_root / "etc/nftables.conf"
         body = "\n".join(f"  {line}" for line in self.rules)
-        text = (
-            "#!/usr/sbin/nft -f\n"
-            "flush ruleset\n"
-            "\n"
-            "table inet getarch {\n"
-            f"{body}\n"
-            "}\n"
-        )
+        text = f"#!/usr/sbin/nft -f\nflush ruleset\n\ntable inet getarch {{\n{body}\n}}\n"
         return (
             Command(
                 argv=("install", "-Dm644", "/dev/stdin", str(target)),

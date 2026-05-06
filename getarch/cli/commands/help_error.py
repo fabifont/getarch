@@ -44,8 +44,7 @@ def run(
     docs_path = _docs_root() / f"{normalised}.md"
     if not docs_path.is_file():
         console.error(
-            f"docs for {normalised!r} not found at {docs_path}; "
-            "the install may be incomplete.",
+            f"docs for {normalised!r} not found at {docs_path}; the install may be incomplete.",
         )
         raise typer.Exit(code=2)
     sys.stdout.write(docs_path.read_text(encoding="utf-8"))

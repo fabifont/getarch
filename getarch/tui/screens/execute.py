@@ -110,7 +110,8 @@ class TuiExecuteApp(App[int]):
 
     def on_mount(self) -> None:
         self._timer = self.set_interval(
-            _REFRESH_INTERVAL_SECONDS, self._log_widget.refresh_buffer,
+            _REFRESH_INTERVAL_SECONDS,
+            self._log_widget.refresh_buffer,
         )
         self._worker = threading.Thread(target=self._run_pipeline, daemon=True)
         self._worker.start()
@@ -143,10 +144,13 @@ class TuiExecuteApp(App[int]):
                 disk = None
             else:
                 disk = Disk(
-                    path=DiskPath(Path(cfg.disk.path)), size_bytes=2**40,
+                    path=DiskPath(Path(cfg.disk.path)),
+                    size_bytes=2**40,
                 )
             plan = Planner().build(
-                cfg=cfg, disk=disk, mount_root=self._mount_root,
+                cfg=cfg,
+                disk=disk,
+                mount_root=self._mount_root,
             )
             require_destructive_confirmation(
                 plan,
@@ -167,11 +171,10 @@ class TuiExecuteApp(App[int]):
                 dry_run=self._dry_run,
             )
             ctx = ExecutionContext(
-                runner=self._runner, mount_root=self._mount_root,
+                runner=self._runner,
+                mount_root=self._mount_root,
             )
-            state_path = (
-                None if self._dry_run else default_state_path(self._mount_root)
-            )
+            state_path = None if self._dry_run else default_state_path(self._mount_root)
             Pipeline(
                 steps=tuple(steps),  # type: ignore[arg-type]
                 state_path=state_path,
@@ -186,7 +189,8 @@ class TuiExecuteApp(App[int]):
         except Exception as exc:  # noqa: BLE001
             self._exit_code = 1
             self.call_from_thread(
-                self._status.update, f"[red]error:[/red] {exc} — press q",
+                self._status.update,
+                f"[red]error:[/red] {exc} — press q",
             )
 
     @override
@@ -204,9 +208,12 @@ def run(
     dry_run: bool = True,
     assume_yes: bool = False,
 ) -> int:
-    return TuiExecuteApp(
-        config_path=config_path,
-        mount_root=mount_root,
-        dry_run=dry_run,
-        assume_yes=assume_yes,
-    ).run() or 0
+    return (
+        TuiExecuteApp(
+            config_path=config_path,
+            mount_root=mount_root,
+            dry_run=dry_run,
+            assume_yes=assume_yes,
+        ).run()
+        or 0
+    )

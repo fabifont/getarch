@@ -95,9 +95,7 @@ class DiskWipeStep:
                 Command(
                     argv=("blkdiscard", "-f", self.target_disk_path),
                     check=False,
-                    description=(
-                        f"discard blocks on {self.target_disk_path} (best-effort)"
-                    ),
+                    description=(f"discard blocks on {self.target_disk_path} (best-effort)"),
                 ),
             ),
         ]
@@ -171,9 +169,7 @@ class RuntimeNetworkBootstrapStep:
                             "connect",
                             self.ssid,
                         ),
-                        description=(
-                            f"connect {self.device} to wifi {self.ssid}"
-                        ),
+                        description=(f"connect {self.device} to wifi {self.ssid}"),
                     ),
                 ),
             )
@@ -204,9 +200,7 @@ class RuntimeNetworkBootstrapStep:
                             "connect",
                             self.ssid,
                         ),
-                        description=(
-                            f"connect {self.device} to wifi {self.ssid} (EAP)"
-                        ),
+                        description=(f"connect {self.device} to wifi {self.ssid} (EAP)"),
                     ),
                 ),
             )
@@ -232,9 +226,7 @@ class RuntimeNetworkBootstrapStep:
             )
         else:
             raise _EnvErr(f"unknown bootstrap backend {self.backend!r}")
-        status = (
-            StepStatus.SUCCEEDED if all(r.ok for r in results) else StepStatus.FAILED
-        )
+        status = StepStatus.SUCCEEDED if all(r.ok for r in results) else StepStatus.FAILED
         return StepResult(step_id=self.id, status=status, commands=tuple(results))
 
     def _render_8021x_profile(self) -> str:

@@ -21,14 +21,14 @@ bump it. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for what is missing.
 
 ## What it covers today
 
-- UEFI + GPT (BIOS in roadmap P3)
+- UEFI + GPT, plus BIOS/MBR boot
 - Filesystems: ext4, btrfs (with default + custom subvolumes)
 - Encryption: none, LUKS2 on root
 - Bootloader: systemd-boot
 - Initramfs: mkinitcpio (drop-in `/etc/mkinitcpio.conf.d/10-hooks.conf`)
 - Kernels: linux, linux-lts, linux-zen, linux-hardened
-- Microcode: explicit Intel/AMD (auto-detect in roadmap P1)
-- Swap: none / partition (swapfile in roadmap P1)
+- Microcode: explicit Intel/AMD or auto-detect
+- Swap: none / partition / swapfile
 - Optional regular users with sudo + hashed/plain/secret-file/prompt root
   authentication
 - Locale, keymap, timezone, hostname, hosts, services, timers, packages

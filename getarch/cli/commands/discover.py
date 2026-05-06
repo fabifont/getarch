@@ -56,11 +56,13 @@ def _discover(runner: CommandRunner) -> dict[str, object]:
 
 def run(
     no_cache: bool = typer.Option(
-        False, "--no-cache",
+        False,
+        "--no-cache",
         help="Skip the discovery cache (always re-run lsblk/localectl/...).",
     ),
     clear_cache: bool = typer.Option(
-        False, "--clear-cache",
+        False,
+        "--clear-cache",
         help="Drop the cache before running discovery.",
     ),
 ) -> None:

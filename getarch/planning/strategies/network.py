@@ -38,24 +38,61 @@ class IwdNetworkPlan:
 
 # systemd.netdev(5) — keys whose home is the kind-specific section
 # rather than [NetDev]. Anything not listed here lands in [NetDev].
-_VLAN_KEYS = frozenset({
-    "Id", "Protocol", "GVRP", "MVRP", "LooseBinding", "ReorderHeader",
-    "EgressQOSMaps", "IngressQOSMaps",
-})
-_BRIDGE_KEYS = frozenset({
-    "HelloTimeSec", "MaxAgeSec", "ForwardDelaySec", "AgeingTimeSec",
-    "Priority", "GroupForwardMask", "DefaultPVID", "MulticastQuerier",
-    "MulticastSnooping", "VLANFiltering", "VLANProtocol", "STP",
-    "MulticastIGMPVersion",
-})
-_BOND_KEYS = frozenset({
-    "Mode", "TransmitHashPolicy", "LACPTransmitRate", "MIIMonitorSec",
-    "UpDelaySec", "DownDelaySec", "GratuitousARP", "AllSlavesActive",
-    "DynamicTransmitLoadBalancing", "MinLinks", "AdSelect",
-    "FailOverMACPolicy", "ARPValidate", "ARPIntervalSec", "ARPIPTargets",
-    "ARPAllTargets", "PrimaryReselectPolicy", "ResendIGMP",
-    "PacketsPerSlave", "NumberOfARPTargets", "ActiveSlave", "PrimarySlave",
-})
+_VLAN_KEYS = frozenset(
+    {
+        "Id",
+        "Protocol",
+        "GVRP",
+        "MVRP",
+        "LooseBinding",
+        "ReorderHeader",
+        "EgressQOSMaps",
+        "IngressQOSMaps",
+    }
+)
+_BRIDGE_KEYS = frozenset(
+    {
+        "HelloTimeSec",
+        "MaxAgeSec",
+        "ForwardDelaySec",
+        "AgeingTimeSec",
+        "Priority",
+        "GroupForwardMask",
+        "DefaultPVID",
+        "MulticastQuerier",
+        "MulticastSnooping",
+        "VLANFiltering",
+        "VLANProtocol",
+        "STP",
+        "MulticastIGMPVersion",
+    }
+)
+_BOND_KEYS = frozenset(
+    {
+        "Mode",
+        "TransmitHashPolicy",
+        "LACPTransmitRate",
+        "MIIMonitorSec",
+        "UpDelaySec",
+        "DownDelaySec",
+        "GratuitousARP",
+        "AllSlavesActive",
+        "DynamicTransmitLoadBalancing",
+        "MinLinks",
+        "AdSelect",
+        "FailOverMACPolicy",
+        "ARPValidate",
+        "ARPIntervalSec",
+        "ARPIPTargets",
+        "ARPAllTargets",
+        "PrimaryReselectPolicy",
+        "ResendIGMP",
+        "PacketsPerSlave",
+        "NumberOfARPTargets",
+        "ActiveSlave",
+        "PrimarySlave",
+    }
+)
 _NETDEV_KIND_SECTION_KEYS: dict[str, frozenset[str]] = {
     "vlan": _VLAN_KEYS,
     "bridge": _BRIDGE_KEYS,
@@ -84,11 +121,7 @@ class NetworkConfigStrategy:
 
     def _networkd_commands(self) -> Iterable[Command]:
         for profile in self.networkd_profiles:
-            target = (
-                self.mount_root
-                / "etc/systemd/network"
-                / f"{profile.name}.network"
-            )
+            target = self.mount_root / "etc/systemd/network" / f"{profile.name}.network"
             yield Command(
                 argv=("install", "-Dm644", "/dev/stdin", str(target)),
                 input=_render_ini(
@@ -99,11 +132,7 @@ class NetworkConfigStrategy:
 
     def _netdev_commands(self) -> Iterable[Command]:
         for nd in self.networkd_netdevs:
-            target = (
-                self.mount_root
-                / "etc/systemd/network"
-                / f"{nd.name}.netdev"
-            )
+            target = self.mount_root / "etc/systemd/network" / f"{nd.name}.netdev"
             kind_section_name = nd.kind.upper() if nd.kind == "vlan" else nd.kind.capitalize()
             kind_keys = _NETDEV_KIND_SECTION_KEYS.get(nd.kind, frozenset())
             netdev_section: dict[str, str | list[str]] = {
@@ -126,11 +155,7 @@ class NetworkConfigStrategy:
 
     def _link_commands(self) -> Iterable[Command]:
         for link in self.networkd_links:
-            target = (
-                self.mount_root
-                / "etc/systemd/network"
-                / f"{link.name}.link"
-            )
+            target = self.mount_root / "etc/systemd/network" / f"{link.name}.link"
             yield Command(
                 argv=("install", "-Dm644", "/dev/stdin", str(target)),
                 input=_render_ini(

@@ -198,9 +198,7 @@ def test_grub_with_detached_header_includes_header_in_cryptdevice() -> None:
         crypt_partition_path="/dev/disk/by-partlabel/cryptsystem",
         mount_root=Path("/mnt"),
     ).commands()
-    flat = " ".join(arg for c in cmds for arg in c.argv) + " ".join(
-        c.input or "" for c in cmds
-    )
+    flat = " ".join(arg for c in cmds for arg in c.argv) + " ".join(c.input or "" for c in cmds)
     assert "header=/dev/disk/by-partlabel/cryptheader" in flat
 
 

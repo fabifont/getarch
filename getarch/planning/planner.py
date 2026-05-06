@@ -142,7 +142,9 @@ class Planner:
             raise PlanError(f"plan invalid: {exc}") from exc
 
     def _packages_step_container(
-        self, cfg: Config, mount_root: Path,
+        self,
+        cfg: Config,
+        mount_root: Path,
     ) -> PlannedStep:
         # Inside a container we can't pacstrap (no /proc, no fresh
         # bootstrap). Run pacman *inside* the chroot via arch-chroot
@@ -165,9 +167,7 @@ class Planner:
                 Command(
                     argv=("pacman", "-Sy", "--needed", "--noconfirm", *pkgs),
                     chroot=True,
-                    description=(
-                        f"pacman -Sy --needed {len(pkgs)} packages in container chroot"
-                    ),
+                    description=(f"pacman -Sy --needed {len(pkgs)} packages in container chroot"),
                 ),
             ),
             destructive=False,
@@ -204,21 +204,13 @@ class Planner:
         steps.append(self._partitioning_step(cfg, disk, encrypted=encrypted))
         if encrypted:
             steps.append(self._encryption_step(cfg))
-        if (
-            encrypted
-            and cfg.encryption.home_kind != "none"
-            and self._has_role(cfg, "home")
-        ):
+        if encrypted and cfg.encryption.home_kind != "none" and self._has_role(cfg, "home"):
             steps.append(self._encryption_home_step(cfg))
         if cfg.partitioning.lvm is not None:
             steps.append(self._lvm_create_step(cfg))
         root_partition = self._root_device(cfg, encrypted=encrypted)
         efi_label = self._label_for_role(cfg, "efi", "EFI")
-        efi_partition = (
-            None
-            if cfg.firmware == "bios"
-            else f"/dev/disk/by-partlabel/{efi_label}"
-        )
+        efi_partition = None if cfg.firmware == "bios" else f"/dev/disk/by-partlabel/{efi_label}"
         if cfg.partitioning.lvm is not None:
             steps.extend(self._lvm_filesystem_steps(cfg, efi_partition, mount_root))
         else:
@@ -234,9 +226,7 @@ class Planner:
 
     def _root_device(self, cfg: Config, *, encrypted: bool) -> str:
         if cfg.partitioning.lvm is not None:
-            root_lv = next(
-                v for v in cfg.partitioning.lvm.volumes if v.mountpoint == "/"
-            )
+            root_lv = next(v for v in cfg.partitioning.lvm.volumes if v.mountpoint == "/")
             return f"/dev/{cfg.partitioning.lvm.vg_name}/{root_lv.name}"
         if encrypted:
             return f"/dev/mapper/{cfg.encryption.mapper_name}"
@@ -322,10 +312,13 @@ class Planner:
             ),
         )
         if cfg.partitioning.custom is not None:
-            commands = SgdiskCustomStrategy(
-                disk=disk,
-                partitions=tuple(cfg.partitioning.custom),
-            ).commands() + settle
+            commands = (
+                SgdiskCustomStrategy(
+                    disk=disk,
+                    partitions=tuple(cfg.partitioning.custom),
+                ).commands()
+                + settle
+            )
             label_summary = ",".join(p.label for p in cfg.partitioning.custom)
             return PlannedStep(
                 id="partitioning",
@@ -334,18 +327,21 @@ class Planner:
                 commands=commands,
                 destructive=True,
                 description=(
-                    f"Create custom GPT layout [{label_summary}] "
-                    f"({cfg.firmware}) on {disk_path}"
+                    f"Create custom GPT layout [{label_summary}] ({cfg.firmware}) on {disk_path}"
                 ),
             )
         if cfg.firmware == "bios":
-            commands = SgdiskBiosStrategy(
-                disk=disk, layout=cfg.partitioning, encrypted=encrypted
-            ).commands() + settle
+            commands = (
+                SgdiskBiosStrategy(
+                    disk=disk, layout=cfg.partitioning, encrypted=encrypted
+                ).commands()
+                + settle
+            )
         else:
-            commands = SgdiskStrategy(
-                disk=disk, layout=cfg.partitioning, encrypted=encrypted
-            ).commands() + settle
+            commands = (
+                SgdiskStrategy(disk=disk, layout=cfg.partitioning, encrypted=encrypted).commands()
+                + settle
+            )
         return PlannedStep(
             id="partitioning",
             title="Partition disk",
@@ -353,8 +349,7 @@ class Planner:
             commands=commands,
             destructive=True,
             description=(
-                f"Create GPT layout {cfg.partitioning.layout!r} "
-                f"({cfg.firmware}) on {disk_path}"
+                f"Create GPT layout {cfg.partitioning.layout!r} ({cfg.firmware}) on {disk_path}"
             ),
         )
 
@@ -430,7 +425,9 @@ class Planner:
         )
 
     def _encryption_home_keyfile_step(
-        self, cfg: Config, mount_root: Path,
+        self,
+        cfg: Config,
+        mount_root: Path,
     ) -> PlannedStep:
         # The keyfile cannot be written to <mount> because the target
         # filesystems aren't mounted yet at the encryption phase. Stash
@@ -510,8 +507,7 @@ class Planner:
             home_label = self._label_for_role(cfg, "home", "home")
             home_partition: str | None = (
                 "/dev/mapper/homecrypt"
-                if cfg.encryption.kind == "luks2"
-                and cfg.encryption.home_kind != "none"
+                if cfg.encryption.kind == "luks2" and cfg.encryption.home_kind != "none"
                 else f"/dev/disk/by-partlabel/{home_label}"
             )
         else:
@@ -600,11 +596,7 @@ class Planner:
                     description=f"mkfs.{vol.filesystem} {device}",
                 ),
             )
-            target = (
-                str(mount_root)
-                if vol.mountpoint == "/"
-                else str(mount_root) + vol.mountpoint
-            )
+            target = str(mount_root) if vol.mountpoint == "/" else str(mount_root) + vol.mountpoint
             mount_cmds.append(
                 Command(
                     argv=("mkdir", "-p", target),
@@ -711,19 +703,12 @@ class Planner:
         if wants_home:
             home_label = self._label_for_role(cfg, "home", "home")
             home_partition = f"/dev/disk/by-partlabel/{home_label}"
-            key_source = (
-                "/etc/cryptkey/home.key"
-                if cfg.encryption.home_keyfile
-                else "none"
+            key_source = "/etc/cryptkey/home.key" if cfg.encryption.home_keyfile else "none"
+            lines.append(
+                'HOME_UUID="$(blkid -s UUID -o value ' + home_partition + ')"',
             )
             lines.append(
-                'HOME_UUID="$(blkid -s UUID -o value '
-                + home_partition
-                + ')"',
-            )
-            lines.append(
-                f'echo "homecrypt UUID=${{HOME_UUID}} {key_source} luks" '
-                f'>> {crypttab_path}',
+                f'echo "homecrypt UUID=${{HOME_UUID}} {key_source} luks" >> {crypttab_path}',
             )
         if cfg.swap.kind == "partition" and cfg.swap.encrypt:
             swap_label = self._label_for_role(cfg, "swap", "swap")
@@ -732,7 +717,7 @@ class Planner:
             # by partlabel directly.
             lines.append(
                 f'echo "swapcrypt /dev/disk/by-partlabel/{swap_label} '
-                f'/dev/urandom swap,plain,'
+                f"/dev/urandom swap,plain,"
                 f'cipher=aes-xts-plain64,size=256" >> {crypttab_path}',
             )
         if not lines:
@@ -786,9 +771,7 @@ class Planner:
         encryption_spec = EncryptionSpec(
             kind=EncryptionKind.LUKS2 if encrypted else EncryptionKind.NONE,
             password=(
-                Secret(cfg.encryption.password)
-                if encrypted and cfg.encryption.password
-                else None
+                Secret(cfg.encryption.password) if encrypted and cfg.encryption.password else None
             ),
             mapper_name=cfg.encryption.mapper_name,
             tpm2_unlock=cfg.encryption.tpm2_unlock,
@@ -833,9 +816,7 @@ class Planner:
         # still override the value by listing crashkernel= themselves
         # later (last write wins for the kernel).
         params = list(cfg.bootloader.extra_kernel_params)
-        if cfg.kdump.enable and not any(
-            p.startswith("crashkernel=") for p in params
-        ):
+        if cfg.kdump.enable and not any(p.startswith("crashkernel=") for p in params):
             params.append(f"crashkernel={cfg.kdump.crashkernel}")
         # Apply user-acknowledged hardware quirks (cmdline contributions).
         for quirk in self._enabled_quirks(cfg):
@@ -1066,10 +1047,7 @@ class Planner:
             )
             for ln in cfg.network.systemd_networkd_links
         )
-        iwd = tuple(
-            IwdNetworkPlan(ssid=n.ssid, psk=n.psk)
-            for n in cfg.network.iwd_networks
-        )
+        iwd = tuple(IwdNetworkPlan(ssid=n.ssid, psk=n.psk) for n in cfg.network.iwd_networks)
         if not profiles and not netdevs and not links and not iwd:
             return None
         cmds = NetworkConfigStrategy(
@@ -1201,9 +1179,7 @@ class Planner:
 
     def _repositories_step(self, cfg: Config) -> PlannedStep | None:
         repos = cfg.repositories
-        extras = tuple(
-            RepositoryEntry(name=r.name, include=r.include) for r in repos.extra
-        )
+        extras = tuple(RepositoryEntry(name=r.name, include=r.include) for r in repos.extra)
         if not repos.multilib and not extras:
             return None
         cmds = RepositoriesStrategy(
@@ -1218,9 +1194,7 @@ class Planner:
             phase=StepPhase.MIRRORS,
             commands=cmds,
             destructive=False,
-            description=(
-                f"multilib={repos.multilib}, extras={[e.name for e in extras]}"
-            ),
+            description=(f"multilib={repos.multilib}, extras={[e.name for e in extras]}"),
         )
 
     def _mirror_step(self, cfg: Config, mount_root: Path) -> PlannedStep | None:

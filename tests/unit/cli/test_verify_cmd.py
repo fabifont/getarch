@@ -29,9 +29,7 @@ def _ok_report() -> EnvironmentReport:
     )
 
 
-def test_verify_prints_ok_when_preflight_passes(
-    tmp_path: Path, mocker: MockerFixture
-) -> None:
+def test_verify_prints_ok_when_preflight_passes(tmp_path: Path, mocker: MockerFixture) -> None:
     mocker.patch(
         "getarch.cli.commands.verify.preflight_environment",
         return_value=_ok_report(),
@@ -43,9 +41,7 @@ def test_verify_prints_ok_when_preflight_passes(
     assert "GenuineIntel" in result.output
 
 
-def test_verify_propagates_preflight_failure(
-    tmp_path: Path, mocker: MockerFixture
-) -> None:
+def test_verify_propagates_preflight_failure(tmp_path: Path, mocker: MockerFixture) -> None:
     mocker.patch(
         "getarch.cli.commands.verify.preflight_environment",
         side_effect=EnvErr("no internet"),

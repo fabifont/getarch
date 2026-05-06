@@ -75,11 +75,18 @@ def _plan_from_state_blob(blob: str) -> InstallPlan:
 
 
 def _diff_lines(
-    label_a: str, lines_a: list[str], label_b: str, lines_b: list[str],
+    label_a: str,
+    lines_a: list[str],
+    label_b: str,
+    lines_b: list[str],
 ) -> str:
     return "\n".join(
         difflib.unified_diff(
-            lines_a, lines_b, fromfile=label_a, tofile=label_b, lineterm="",
+            lines_a,
+            lines_b,
+            fromfile=label_a,
+            tofile=label_b,
+            lineterm="",
         ),
     )
 
@@ -116,8 +123,7 @@ def run(
         if against_installed:
             if config_b is not None:
                 raise PlanError(
-                    "--against-installed cannot be combined with a second "
-                    "config argument",
+                    "--against-installed cannot be combined with a second config argument",
                 )
             state_path = default_state_path(mount_root)
             if not state_path.is_file():
@@ -139,8 +145,7 @@ def run(
         else:
             if config_b is None:
                 raise PlanError(
-                    "two CONFIG paths required when --against-installed is "
-                    "not set",
+                    "two CONFIG paths required when --against-installed is not set",
                 )
             cfg_b = load_config(config_b)
             validate_semantics(cfg_b)
@@ -152,7 +157,10 @@ def run(
         raise typer.Exit(code=2) from None
 
     rendered = _diff_lines(
-        str(config), _render_steps(plan_a), label_b, _render_steps(plan_b),
+        str(config),
+        _render_steps(plan_a),
+        label_b,
+        _render_steps(plan_b),
     )
     if not rendered:
         console.log("[green]plans are identical[/green]")

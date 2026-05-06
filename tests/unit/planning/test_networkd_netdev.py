@@ -154,9 +154,7 @@ def test_planner_renders_netdev_alongside_network() -> None:
 def test_strategy_emits_no_commands_for_networkmanager_backend() -> None:
     cmds = _strategy(
         backend="networkmanager",
-        networkd_netdevs=(
-            NetworkdNetdevPlan(name="x", kind="vlan", properties={}),
-        ),
+        networkd_netdevs=(NetworkdNetdevPlan(name="x", kind="vlan", properties={}),),
     ).commands()
     assert cmds == ()
 

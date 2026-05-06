@@ -1,479 +1,203 @@
 # getarch roadmap
 
-The MVP that ships with v2.0.0a0 covers UEFI + GPT, ext4/btrfs, systemd-boot,
-mkinitcpio, optional LUKS2, optional swap, optional regular users, and the
-common locale/timezone/hostname/services/microcode/kernel choices.
+`getarch` is an opinionated Arch Linux base-system installer. This document
+captures what is implemented today, what is deferred, and what is out of
+scope. For the per-field config reference see
+[`docs/CONFIG.md`](CONFIG.md).
 
-This roadmap captures everything else needed for a complete, opinionated
-Arch Linux base-system installer. Items are grouped by priority. Anything
-related to userland (dotfiles, DEs, app installs) is **out of scope** —
-that is `setarch`'s job.
+Anything userland (dotfiles, DEs, app installs) belongs to `setarch`, not
+`getarch`.
 
-## P0 — required for a safe MVP
+## Implemented
 
-These exist or are stubbed today; they must work end-to-end before tagging
-v2.0.0.
-
-### Strict environment preflight
-* **Status:** done. `IdentityProvider`, `IsoProvider`, `NetworkProvider` and
-  the extended `BlockDeviceProvider`/`PacmanProvider` are wired into
-  `preflight_environment`; `--skip-environment-preflight` covers the
-  minimal-image false-positive risk.
-
-### Destructive confirmation
-* **Status:** done. `getarch/installers/confirmation.py` honours `--yes`/
-  `--force` and falls back to `rich.prompt.Confirm`.
-
-### Dry-run pipeline
-* **Status:** done. `DryRunner` records intent without IO; `--dry-run`
-  exercises the full pipeline.
-
-### Plan rendering JSON output redacts secrets
-* **Status:** done. `render_json` substitutes `***` for sensitive command
-  inputs.
-
-### Disk safety
-* **Status:** done. `LsblkBlockDevices.target_disk_busy` walks the lsblk tree
-  for live mountpoints. `preflight_environment` refuses mounted target
-  disks during the static check; `require_destructive_confirmation` prints
-  the mountpoints in the confirmation summary when present;
-  `DiskBusyGuardStep` repeats the lsblk-fresh check immediately before the
-  first destructive step and cannot be bypassed by
+### Safety and integrity
+* Strict environment preflight: identity (root), Arch ISO check, network
+  reachability, pacman keyring initialization, mount-busy detection,
+  static-mirrorlist presence and reachability. Bypass via
+  `--skip-environment-preflight`.
+* Destructive confirmation gate (`require_destructive_confirmation`):
+  surfaces target disk, layout summary, existing partition filesystems,
+  active mountpoints. Honours `--yes` / `--force`.
+* Always-on `DiskBusyGuardStep` re-checks mount state immediately before
+  the first destructive step; cannot be bypassed by
   `--skip-environment-preflight`, `--yes`, or `--force`.
+* `DiskWipeStep` runs `wipefs -a -f` + `blkdiscard -f` before
+  partitioning when `disk.wipe_before=true`.
+* Snapper-aware destructive guard enumerates `(partition, fstype)` pairs
+  on the target disk and warns explicitly when btrfs is detected.
+* Audit log: every command recorded by `LoggingRunner` with sensitive
+  redaction; written to `<mount>/var/log/getarch.log` before cleanup.
+  Stable JSON Lines schema (`schema_version=1`) + optional HMAC-SHA256
+  trailer (`--audit-hmac-key`).
+* Dry-run pipeline (`--dry-run`) and plan rendering with secret
+  redaction in JSON output.
+* Pipeline state + `--resume` after failure: writes
+  `<mount>/var/log/getarch.state.json` after every successful step,
+  filters non-resumable runtime guards on resume, and refuses fingerprint
+  mismatch unless `--force-fingerprint`.
+* `getarch diff CONFIG --against-installed` reads the persisted plan
+  from a previous install and renders a unified diff against the new
+  plan.
 
-## P1 — required for a complete base installer
+### Filesystems
+* ext4, btrfs (default + custom subvolumes), xfs, f2fs.
+* btrfs snapper integration (`snapper-timeline.timer`,
+  `snapper-cleanup.timer`); planner drops `@snapshots` so snapper owns
+  `/.snapshots` itself.
+* Swap: `none`, partition, `swapfile` (btrfs-aware: `chattr +C`), `zram`.
+* Custom mountpoints (`mountpoints` schema): read-only attach for
+  pre-formatted partitions on disks *other than* the install target;
+  preflight rejects same-disk partlabels.
 
-### Microcode auto-detect → planner injection
-* **Status:** done. `MicrocodeKind.from_cpu_vendor` resolves `auto` against
-  `EnvironmentReport.cpu_vendor`; planner injects the package and
-  bootloader initrd line.
-
-### Mirror configuration plumbing
-* **Status:** done. `ReflectorStrategy` and `StaticMirrorlistStrategy` emit
-  a single `mirrors` step before pacstrap; preflight refuses a missing
-  static mirrorlist; semantic validator rejects empty `reflector_args`.
-
-### Swapfile creation
-* **Status:** done. `SwapfileStrategy` runs `mkdir`, optional `chattr +C`
-  for btrfs, `fallocate`, `chmod 600`, `mkswap`, `swapon`. `genfstab`
-  records the entry from `/proc/swaps`.
-
-### Separate `/home` partition
-* **Status:** done. `Ext4Strategy` and `BtrfsStrategy` create and mount a
-  separate `/home` filesystem when the layout includes `home`; the btrfs
-  `@home` subvolume is dropped in that case so `/home` lives on the
-  standalone filesystem.
-
-### Regular user creation with sudo + hashed passwords
-* **Status:** done.
-
-### Hostname/hosts/locale/timezone validation against discovery
-* **Status:** done — `system/preflight.py` checks every value.
-
-## P2 — quality and flexibility improvements
-
-### YAML / TOML config support
-* **Status:** done. `config/loader.py` branches on file extension and uses
-  `yaml.safe_load`/`tomllib.loads`/`json.loads`.
-
-### Additional bootloaders (GRUB, UKI/systemd-stub)
-* **Status:** done. `GrubStrategy` and `UkiStrategy` plus
-  `build_bootloader_strategy` dispatch on `cfg.bootloader.kind`.
-
-### Additional filesystems (xfs, f2fs)
-* **Status:** done. `_SimpleMkfsStrategy` covers xfs/f2fs alongside ext4
-  inside the existing factory.
-
-### dracut initramfs
-* **Status:** done. `DracutStrategy` writes
-  `/etc/dracut.conf.d/10-getarch.conf` and runs
-  `dracut --regenerate-all --force`. `build_initramfs_strategy` dispatches.
-
-### TPM2 / FIDO2 LUKS unlock
-* **Status:** done. `LuksStrategy` honours
-  `EncryptionConfig.tpm2_unlock`/`fido2_unlock` and emits
-  `systemd-cryptenroll --tpm2-device=auto`/`--fido2-device=auto` after
-  open.
-
-### Detached LUKS header
-* **Status:** plumbing in domain layer; refused at schema time. The
-  `LuksStrategy` honours `header_path` for `cryptsetup` invocations, but
-  the schema currently rejects `EncryptionConfig.header_path` because
-  systemd-boot/UKI cannot reach a header that lives off-disk at boot.
-  Tracked in P4 (boot-time header access).
-
-### `zram` swap
-* **Status:** done. `ZramStrategy` writes
-  `/etc/systemd/zram-generator.conf` and the planner installs
-  `zram-generator` automatically.
-
-### Custom mountpoints
-* **Status:** done (read-only attach). `mountpoints` accepts
-  `{partition_label, mountpoint, mount_options}` and the
-  `custom-mountpoints` planner step `mkdir`s + mounts each entry.
-  **Does not format** — the partition must already exist with a
-  filesystem on a disk *other than* `cfg.disk.path`; preflight refuses
-  same-disk partlabels. Format-and-mount on the target disk is tracked
-  in P5 (custom partition layout DSL).
-
-### Network: full systemd-networkd / iwd stacks
-* **Status:** done. `systemd_networkd` profiles are rendered to
-  `/etc/systemd/network/*.network` and `iwd_networks` PSKs are written to
-  `/var/lib/iwd/*.psk` (mode 0600, sensitive logging).
-
-### Audit log
-* **Status:** done. `LoggingRunner` records every command (with sensitive
-  redaction) and the install command writes the JSON log to
-  `<mount>/var/log/getarch.log` before cleanup.
-
-### Robust unmount / cleanup retries
-* **Status:** done. Cleanup runs `umount -R || umount -lR` so a busy
-  target falls back to lazy unmount.
-
-### PyPI publishing
-* **Status:** done. `release.yml` builds with `uv build` and publishes to
-  PyPI through a Trusted Publisher; setup is documented in
-  `docs/RELEASING.md`.
-
-### Single-file zipapp distribution
-* **Status:** done. The release workflow builds `dist/getarch.pyz` via
-  `shiv` and attaches it to the GitHub Release.
-
-### QEMU smoke test
-* **Status:** done. `.github/workflows/qemu.yml` boots the upstream Arch
-  ISO under QEMU/KVM on a self-hosted runner for every push to
-  `main`/`dev` and same-repo PR (fork PRs are skipped via a `should-run`
-  gate so untrusted code never reaches the self-hosted runner). The
-  matrix covers ext4/btrfs/xfs/f2fs × systemd-boot/grub/uki (12 cells,
-  `fail-fast: false`). `test_resources/qemu_smoke.py` drives the install
-  via the QEMU monitor + virtfs share, then restarts QEMU disk-only
-  (no ISO, no virtfs) and asserts the installed system reaches a getty
-  on serial.
-* **Runner requirements:** label `kvm`, KVM access, `qemu-system-x86_64`,
-  `qemu-img`, `OVMF` firmware (`/usr/share/edk2/x64/OVMF_*.4m.fd`),
-  Python 3.14, and `uv`.
-
-## P3 — advanced / future
-
-### Interactive TUI mode
-* **Status:** done (MVP). `getarch tui CONFIG` opens a Textual-based
-  read-only viewer of the config + rendered plan. Optional dependency:
-  `pip install 'getarch[tui]'`. Execution-from-TUI is intentionally not
-  wired yet.
-
-### Plan diffs
-* **Status:** done. `getarch diff CONFIG_A CONFIG_B` emits a unified
-  diff of the plans built from each config (step IDs + per-step argv).
-
-### Step-by-step resume after failure
-* **Status:** done. `Pipeline` writes
-  `<mount>/var/log/getarch.state.json` after every successful step (and
-  on failure with `last_error`). `getarch install --resume` skips
-  already-completed step IDs. Caveat: resume cannot unwind partial
-  filesystem state from a half-finished destructive step — the user is
-  responsible for cleanup before resuming.
-
-### BIOS/MBR boot
-* **Status:** done. `firmware: "bios"` switches partitioning to
-  `SgdiskBiosStrategy` (1MiB BIOS-boot partition, no ESP) and the
-  bootloader to `GrubBiosStrategy` (`grub-install --target=i386-pc`).
-  Semantic validator refuses any non-grub bootloader on BIOS.
-
-### Non-x86_64 architectures
-* **Status:** deferred indefinitely — needs aarch64/RISC-V hardware to
-  validate. Schema would grow `arch` field when there is a real test
-  surface.
-
-### Btrfs snapshot integration with snapper
-* **Status:** done. `filesystem.snapper=true` (btrfs only) installs the
-  `snapper` package, creates the `root` config in chroot, and enables
-  `snapper-timeline.timer` + `snapper-cleanup.timer`.
-
-### `multilib` / extra repo enablement
-* **Status:** done. `repositories.multilib=true` uncomments the
-  `[multilib]` block in `/etc/pacman.conf` on the live ISO before
-  pacstrap; `repositories.extra` appends arbitrary repo blocks. The
-  strategy follows up with `pacman -Sy --noconfirm` so pacstrap sees
-  the new repos.
-
-### Headless network bootstrap
-* **Status:** done. `network.bootstrap` accepts an `iwctl` or `dhcp`
-  payload that fires before the runtime preflight so the ISO has
-  internet for the keyring populate.
-
-### Hypothesis-driven planner property tests
-* **Status:** done. `tests/property/test_planner_invariants.py`
-  generates random valid combos across fs / encryption / swap /
-  bootloader / initramfs / timeout and asserts: unique step IDs,
-  destructive-phase invariants, non-empty argv for every command, and
-  monotonic phase order.
-
-## P4 — finish what P0–P3 left partial
-
-These are concrete follow-ups surfaced by the P0–P3 implementation and
-adversarial reviews. Each one has a clear contract; none requires new
-hardware.
-
-### Boot-time access to detached LUKS header
-* **Status:** done (carrier partition). New `efi-luksheader-root` /
+### Encryption
+* LUKS2 on root with passphrase, TPM2 unlock, or FIDO2 unlock
+  (`systemd-cryptenroll --tpm2-device=auto` / `--fido2-device=auto`).
+* Detached LUKS header on a carrier partition (`efi-luksheader-root` /
   `efi-swap-luksheader-root` layouts emit a 16 MiB `cryptheader` GPT
-  partition. `EncryptionConfig.header_path` (typically
-  `/dev/disk/by-partlabel/cryptheader`) threads through `cryptsetup
-  --header` calls and the bootloader cmdline (`rd.luks.options=header=…`).
-  Semantic validator binds the field to the carrier layout.
+  partition; `header_path` threads through `cryptsetup --header` and
+  the bootloader cmdline (`rd.luks.options=header=…`)).
+* Encrypted `/home`: `home_kind="shared-key"` (reuse root password) or
+  `"separate-key"` (require `home_password`); auto-unlock via
+  `/etc/cryptkey/home.key` written inside the unlocked root.
+* Encrypted swap: random-key dm-crypt swap with crypttab entry,
+  unlocked by `systemd-cryptsetup@swapcrypt.service` on boot.
 
-### Encrypted `/home` partition
-* **Status:** done. `EncryptionConfig.home_kind` accepts `"shared-key"`
-  (reuse root password) or `"separate-key"` (require
-  `home_password`). The planner emits a new `encryption-home` step that
-  formats and opens `/dev/mapper/homecrypt`; the filesystem strategy
-  uses the mapper device for home; a `crypttab-home` step writes the
-  entry into `/etc/crypttab` with the UUID resolved at execution time.
+### Bootloaders, initramfs, kernel
+* systemd-boot, GRUB, UKI/systemd-stub on UEFI; GRUB on BIOS/MBR
+  (`firmware: "bios"` switches partitioning to `SgdiskBiosStrategy` and
+  the bootloader to `GrubBiosStrategy`).
+* mkinitcpio (drop-in `/etc/mkinitcpio.conf.d/10-hooks.conf`) and
+  dracut (`/etc/dracut.conf.d/10-getarch.conf`).
+* Microcode: explicit `intel`/`amd` or `auto` (auto reads
+  `/proc/cpuinfo` via `IsoEnvironment`; planner injects the package and
+  the bootloader initrd entry).
+* Kernels: `linux`, `linux-lts`, `linux-zen`, `linux-hardened`.
+* Optional kdump (`kdump.enable`): planner installs `kexec-tools` and
+  sets `crashkernel=` on the bootloader cmdline.
+* Hardware quirks DB (`getarch/quirks/`) keyed by PCI/USB IDs;
+  preflight surfaces matches; planner appends modules + kernel cmdline
+  opts to both initramfs generators (mkinitcpio uses `MODULES=()`,
+  dracut uses `force_drivers+=`). Unknown quirk IDs fail closed.
 
-### `home_size_mib = null` rest-of-disk
-* **Status:** done. New `partitioning.root_size_mib` lets the user fix
-  the root slice; `home` then takes the rest of the disk (sgdisk's `0`
-  end token). Semantic validator rejects setting both at once.
+### Disk layouts
+* Predefined layouts: `efi-root`, `efi-swap-root`, `efi-root-home`,
+  `efi-swap-root-home`, plus the encrypted-header carrier variants
+  (`efi-luksheader-root`, `efi-swap-luksheader-root`).
+* `partitioning.root_size_mib` lets `/home` take rest-of-disk
+  (mutually exclusive with `home_size_mib`).
+* `partitioning.custom: list[PartitionSpec]` payload for arbitrary
+  partition tables on the target disk with role mapping.
+* LVM-on-LUKS: one LUKS container with VG inside; per-LV mkfs/mount;
+  planner auto-adds `lvm2` to packages.
+* Container/chroot install mode (`firmware: "container"`) skips
+  partitioning + bootloader + initramfs + cleanup; everything else runs
+  into a user-supplied `--mount-root`.
 
-### TUI execution mode
-* **Status:** done (MVP). `getarch tui --execute` opens a new Textual
-  screen that runs the install pipeline behind a worker thread and
-  tails the `LoggingRunner` buffer into a scrollable log view. Real
-  execution is gated on dry-run for now; modal confirmations land
-  later (see P5/P6 for follow-ups).
-
-### Resume safety: config fingerprint
-* **Status:** done. `PipelineState.plan_fingerprint` (SHA-256 of the
-  rendered plan JSON) persists alongside the completed step list.
-  `--resume` refuses to continue when the fingerprint differs from the
-  current plan unless `--force-fingerprint` is also passed.
-  `PipelineState.schema_version` bumps to 2; v1 state files are still
-  readable.
-
-### Plan diff against installed system
-* **Status:** done. `getarch diff CONFIG --against-installed` reads the
-  plan JSON persisted in `PipelineState.plan_blob` from the previous
-  install and renders a unified diff against the new plan.
-
-### Disk wipe before partition (`disk.wipe_before`)
-* **Status:** done. New `DiskWipeStep` is inserted between
-  `disk-busy-guard` and the runtime preflight when
-  `disk.wipe_before=true`. Runs `wipefs -a -f` (fails the step on
-  failure) and `blkdiscard -f` (best-effort, HDDs return non-zero).
-
-### Mirror reachability preflight
-* **Status:** done. When `mirrors.strategy="static"` and the file
-  exists, preflight fetches `core/os/x86_64/core.db` against the first
-  uncommented mirror with a 10s HEAD timeout. Refuses on URL errors,
-  socket errors, timeouts, or HTTP 4xx/5xx.
-
-### `getarch verify CONFIG`
-* **Status:** done. New CLI subcommand re-runs `preflight_environment`
-  and prints the report. JSON mode (`--json`) emits the full
-  dataclass; default text mode prints a compact summary.
-
-### `getarch microcode CONFIG`
-* **Status:** done. Loads the config, reads `cpu_vendor` via
-  `IsoEnvironment`, prints the resolved `MicrocodeKind` and the
-  package it would add.
-
-### Snapper-aware destructive guard
-* **Status:** done. `BlockDeviceProvider.target_disk_filesystems`
-  enumerates all `(partition, fstype)` pairs on the target disk via
-  `lsblk -J -o NAME,FSTYPE`. The destructive confirmation prompt
-  surfaces them and explicitly warns when btrfs is detected (snapshots
-  / subvolumes will be wiped).
-
-### Locale: multi-locale support
-* **Status:** done. `locale.locale` accepts `list[str]` (or a single
-  string for back-compat). Each entry produces one `/etc/locale.gen`
-  line. Semantic validator requires `locale.lang` to be a prefix of at
-  least one entry.
-
-## P5 — extended features
-
-Larger items that meaningfully widen the supported install surface.
-None are required for the base installer to be useful, but each one
-matches a real hardware/use case.
-
-**Status:** 12/16 implemented and adversarially reviewed (commit b5c8d42).
-The four deferred items remain open: multi-disk btrfs raid, ZFS root,
-btrfs pre-snapshot, systemd-homed.
-
-### Custom partition table DSL on the target disk *(done — a46bb9d)*
-* **Why:** the current `partitioning.layout` enum only covers four
-  predefined layouts. Power users want arbitrary partitions on the
-  install target (e.g., separate `/var`, `/srv`, ZFS data partition).
-* **Plan:** new `partitioning.custom: list[PartitionSpec]` payload —
-  each entry has `label`, `size_mib`, `typecode`. Mutually exclusive
-  with `layout`. Planner builds the sgdisk script.
-
-### Multi-disk: btrfs `raid1` / `raid10`
-* **Why:** btrfs supports built-in RAID; getarch only handles one disk.
-* **Plan:** `disks: list[DiskConfig]` (deprecate `disk`), btrfs strategy
-  spans them via `mkfs.btrfs -m raid1 -d raid1 dev1 dev2`. Bootloader
-  install needs to write to the EFI partition on each disk.
-
-### LVM-on-LUKS layout *(done — 09e0409)*
-* **Why:** classical Linux server layout (one LUKS volume, LVM inside,
-  multiple LVs).
-* **Plan:** new `LvmStrategy`; schema gains `lvm` block; encryption
-  becomes a single LUKS container, mkfs runs against `/dev/<vg>/<lv>`.
-
-### ZFS root (third-party module)
-* **Why:** ZFS is the most common non-mainline filesystem request.
-* **Plan:** opt-in via `archzfs` extra repo; `FilesystemKind.ZFS` +
-  `ZfsStrategy`. Risk: ZFS module mismatch on kernel update.
-
-### systemd-networkd extras: VLAN, bridge, bond *(done — d0a6c7f)*
-* **Why:** datacentre / homelab installs need link-aggregation or VLAN
-  trunks on first boot.
-* **Plan:** widen `SystemdNetworkdProfile` to render `*.netdev` and
-  `*.link` files in addition to `*.network`.
-
-### WPA2-Enterprise (802.1x) *(done — c9e6037, ca_cert_path b5c8d42)*
-* **Why:** corporate wifi.
-* **Plan:** new `WifiBootstrap.kind = "iwctl-eap"` with `username` /
-  `cert_path` / `private_key_path` / `ca_cert_path`. PSK-only path stays.
-
-### WireGuard pre-install bootstrap *(done — c9e6037)*
-* **Why:** boxes inside corporate VPNs only reach mirrors via
-  WireGuard.
-* **Plan:** new bootstrap kind that writes `/etc/wireguard/wg0.conf`,
+### Networking
+* `systemd_networkd` profiles render `*.network`, `*.netdev`, `*.link`
+  files (covers VLAN, bridge, bond).
+* `iwd_networks` writes `/var/lib/iwd/<ssid>.psk` (mode 0600).
+* WPA2-Enterprise (`WifiBootstrap.kind="iwctl-eap"`) with `username`,
+  `cert_path`, `private_key_path`, optional `ca_cert_path`.
+* WireGuard pre-install bootstrap writes `/etc/wireguard/wg0.conf` and
   enables `wg-quick@wg0` *before* the runtime preflight.
+* `network.bootstrap` (iwctl/dhcp) brings interfaces up before the
+  keyring populate; PSKs land on stdin, never argv.
+* `nftables` ruleset rendering to `/etc/nftables.conf` + service enable.
 
-### Encrypted swap *(done — 3668b01)*
-* **Why:** `LUKS2` root + a `swap` partition leaves the swap partition
-  plaintext, so anything paged out of RAM (passwords, keys) can leak.
-* **Plan:** new `encryption-swap` planner step that runs
-  `cryptsetup open --type plain --key-file /dev/urandom <swap>
-  swapcrypt`, with a corresponding `crypttab` entry. mkswap/swapon
-  target the mapper. Survives reboot via systemd's
-  `systemd-cryptsetup@swapcrypt.service` reading from crypttab.
+### Repositories and packages
+* `repositories.multilib=true` uncomments `[multilib]` in
+  `/etc/pacman.conf` on the live ISO before pacstrap.
+* `repositories.extra` appends arbitrary repo blocks; the strategy
+  follows up with `pacman -Sy --noconfirm`.
+* Multi-locale support (`locale.locale: list[str]` or single string);
+  validator requires `locale.lang` to be a prefix of at least one entry.
 
-### Auto-unlock for encrypted /home *(done — 375de93)*
-* **Why:** `home_kind="shared-key"` currently prompts the user for the
-  passphrase twice (root + home) because crypttab uses `none` for the
-  key source.
-* **Plan:** generate a 4 KiB random key under `/etc/cryptkey/home.key`
-  with mode `0600` *inside the unlocked root*; rewrite the crypttab
-  entry to point at it. systemd unlocks `/home` automatically after
-  pivot.
+### CLI
+* Subcommands: `validate`, `plan`, `install`, `schema`, `examples`,
+  `discover`, `version`, `diff`, `verify`, `microcode`, `migrate`,
+  `help error`, `tui`.
+* Flags: `--dry-run`, `--yes`, `--force`, `--resume`,
+  `--force-fingerprint`, `--skip-environment-preflight`,
+  `--skip-runtime-preflight`, `--mount-root`, `--json`,
+  `--log-sink {syslog://…,journald}`, `--log-format {text,json}`,
+  `--audit-hmac-key`.
+* Stable error codes (`getarch help error <code>`) backed by per-code
+  Markdown docs under `docs/errors/`.
+* Schema v2 migration: `getarch migrate` rewrites v1 configs;
+  `config/loader.py` routes by `version`.
 
-### TUI execution: confirmation modals + real runner *(done — 64332b8)*
-* **Why:** `getarch tui --execute` runs the dry-run pipeline. Live
-  install needs interactive confirmations and password prompts.
-* **Plan:** Textual modal screen wrapping the destructive confirmation
-  prompt; password prompts piped to the runner via a thread-safe
-  callback.
+### TUI
+* `getarch tui CONFIG` — Textual-based read-only viewer of config +
+  rendered plan (optional dependency: `pip install 'getarch[tui]'`).
+* `getarch tui --execute` — runs the install pipeline behind a worker
+  thread, tails the audit buffer into a scrollable log view, with modal
+  destructive confirmations and password prompt callbacks. Shares
+  `build_install_pipeline_steps` with the CLI install command so
+  surfaces cannot drift on safety guarantees.
 
-### nftables ruleset rendering *(done — 37eac66)*
-* **Why:** users want a baseline firewall on first boot.
-* **Plan:** schema field for a list of rules; planner writes
-  `/etc/nftables.conf` and enables `nftables.service`.
+### Distribution
+* PyPI publishing via Trusted Publisher (`release.yml`).
+* Single-file zipapp (`shiv` → `dist/getarch.pyz`) attached to releases.
+* AUR PKGBUILD (thin wrapper).
+* Reproducible builds via `SOURCE_DATE_EPOCH`.
 
-### Btrfs snapshot before destructive ops
-* **Why:** existing systems with snapshots could be rolled back if the
-  install fails; we don't take one.
-* **Plan:** when reinstalling onto a btrfs disk that has an existing
-  pre-getarch root subvolume, snapshot it before partitioning. Hard
-  case; optional.
+### Observability
+* Structured logging: stdlib `logging` with optional `--log-sink syslog`
+  / `journald` and `--log-format text|json`.
+* Discovery cache at `~/.cache/getarch/discovery.json` (60 s TTL).
+* Audit log schema documented in [`docs/audit-schema.md`](audit-schema.md).
 
-### systemd-homed for regular users
-* **Why:** modern user account management with portable home dirs.
-* **Plan:** schema toggle `users.regular[].kind = "homed"`; planner
-  runs `homectl create` instead of `useradd`.
+### Testing
+* Unit suite (494 tests at last count) with coverage reporting;
+  basedpyright, `ruff check`, `ruff format --check` in CI.
+* Hypothesis property tests
+  (`tests/property/test_planner_invariants.py`) over fs / encryption /
+  swap / bootloader / initramfs combos.
+* QEMU smoke matrix on a self-hosted KVM runner: 4 filesystems
+  (ext4/btrfs/xfs/f2fs) × 3 bootloaders (systemd-boot/grub/uki) with a
+  post-install reboot check. Fork-PR isolation gate prevents untrusted
+  code from reaching the runner.
 
-### Container / chroot install mode *(done — d226faf, b5c8d42)*
-* **Why:** install into a pre-mounted directory without touching disks
-  (useful for image builds, OCI layers).
-* **Plan:** `firmware: "container"` skips partitioning + bootloader +
-  initramfs + cleanup steps; everything else runs into a user-supplied
-  `--mount-root`.
+### Docs
+* [`docs/TUTORIAL.md`](TUTORIAL.md) — first-install walkthrough.
+* [`docs/HARDENING.md`](HARDENING.md) — post-boot lockdown guide.
+* [`docs/CONFIG.md`](CONFIG.md) — per-field schema reference.
+* [`docs/SECURITY.md`](SECURITY.md) — security model and guarantees.
+* [`docs/RELEASING.md`](RELEASING.md) — release process.
+* [`docs/audit-schema.md`](audit-schema.md) — audit log schema.
+* [`docs/errors/`](errors/) — per-error help pages.
 
-### Reproducible builds *(done — ed08c96)*
-* **Why:** zipapp + wheel should be byte-identical for the same git
-  commit.
-* **Plan:** set `SOURCE_DATE_EPOCH` in the release workflow; pass
-  `--build-id` to shiv; verify by re-build + `cmp` in CI.
+## Pending
 
-### AUR PKGBUILD *(done — ed08c96)*
-* **Why:** make `getarch` installable from the AUR for Arch users who
-  don't want to pull from PyPI.
-* **Plan:** publish a thin PKGBUILD that wraps `pip install getarch`
-  inside a `python` package, or builds the zipapp.
+These are deliberately deferred or need hardware / effort that has not
+materialised yet.
 
-## P6 — observability, tooling, docs
-
-Cross-cutting work that doesn't add features but makes the installer
-easier to operate, debug, and extend.
-
-**Status:** all 8 items implemented and adversarially reviewed
-(commit b6631a8). The structlog swap was scoped down to keeping the
-stdlib `logging` module + adding optional syslog/journald sinks; full
-structlog adoption is deferred until the cost is justified.
-
-### Structured audit log: stable JSON Lines schema + signature *(done — e297803)*
-* **Why:** the current audit log is ad-hoc JSON Lines. Downstream
-  consumers (compliance, SIEM) want a versioned schema and an HMAC.
-* **Plan:** publish `docs/audit-schema.md`; `LoggingRunner` includes
-  a `schema_version` field; optional `--audit-hmac-key` CLI flag
-  appends an HMAC-SHA256 line per record.
-
-### Structured logging with optional remote sink *(done — 9c4e70c)*
-* **Why:** for CI/lab installs, having per-step logs streamed to
-  syslog/journald-export simplifies debugging.
-* **Plan:** keep stdlib `logging`; add `--log-sink syslog://...` /
-  `--log-sink journald` and `--log-format text|json` options.
-
-### Discovery cache *(done — 584412b)*
-* **Why:** `getarch discover` re-runs lsblk/localectl/timedatectl on
-  every call. A short-lived cache would speed up `validate` + `plan` +
-  `install` invocations on the same ISO boot.
-* **Plan:** `~/.cache/getarch/discovery.json` with a TTL (60s default).
-
-### Hardware quirks database *(done — 4c19445, fail-closed b6631a8)*
-* **Why:** specific NIC/SATA/CPU combos need extra mkinitcpio modules
-  or kernel parameters that getarch could opt-in automatically.
-* **Plan:** small YAML at `getarch/quirks/` keyed by PCI/USB IDs;
-  preflight surfaces matches to the user; planner appends the
-  corresponding modules/cmdline.
-
-### Crash dump / kdump *(done — 8a1b8b0)*
-* **Why:** kernel panics during install or first-boot are otherwise
-  lost.
-* **Plan:** opt-in `kdump.enable` schema flag; planner installs
-  `kexec-tools` and sets `crashkernel=` on the bootloader
-  cmdline.
-
-### Better error messages with suggested fixes *(done — ed6b60f)*
-* **Why:** `EnvironmentError` strings are useful but rarely actionable.
-* **Plan:** introduce `code: str` on `GetarchError` subclasses; CLI
-  renders a one-liner + a `getarch help error <code>` link to docs.
-
-### Schema v2 migration path *(done — 03e05ac)*
-* **Why:** v1 already accumulates deprecated combinations. A v2 cycle
-  would let us tighten defaults without breaking existing configs.
-* **Plan:** stub `getarch/config/schema/v2.py`; `config/loader.py`
-  detects `version: 2` and routes accordingly; an in-tree
-  `migrate_v1_to_v2` helper rewrites old configs.
-
-### Tutorial + post-install hardening guide *(done — 09fe5bf)*
-* **Why:** the existing docs cover schema fields but not the
-  end-to-end "first install" path or what to do once the system boots.
-* **Plan:** `docs/TUTORIAL.md` (full walkthrough) and
-  `docs/HARDENING.md` (sshd, firewall, sudoers, automatic updates).
+* **Non-x86_64 architectures.** Schema would grow an `arch` field;
+  needs aarch64 / RISC-V hardware to validate.
+* **Multi-disk btrfs raid (raid1 / raid10).** `disks: list[DiskConfig]`
+  payload (deprecate `disk`), btrfs strategy spans them
+  (`mkfs.btrfs -m raid1 -d raid1 dev1 dev2`); bootloader install needs
+  per-disk ESP handling.
+* **ZFS root.** Opt-in via the `archzfs` extra repo;
+  `FilesystemKind.ZFS` + `ZfsStrategy`. Risk: ZFS module mismatch on
+  kernel update.
+* **Btrfs snapshot before destructive ops.** When reinstalling onto a
+  btrfs disk that already has a pre-getarch root subvolume, snapshot it
+  before partitioning so the install can be rolled back.
+* **systemd-homed for regular users.** Schema toggle
+  `users.regular[].kind="homed"`; planner runs `homectl create` instead
+  of `useradd`.
 
 ## Out of scope
 
-These are deliberately outside `getarch`. They belong to `setarch`
-(userland orchestration), to other tools, or to a future product
-entirely.
+These belong to `setarch` (userland orchestration), to other tools, or
+to a future product entirely.
 
 * Dotfiles, desktop environments, app installs.
 * Internationalised CLI messages.
 * GUI installer.
-* Full AUR helper bootstrap (the multilib/extra-repos plumbing in P3
-  is the limit).
+* Full AUR helper bootstrap (the `repositories.multilib` /
+  `repositories.extra` plumbing is the limit).
 * Backup orchestration / restore from backup.
-* Cloud provider bootstrappers (AWS/GCP/Azure user-data).
+* Cloud provider bootstrappers (AWS / GCP / Azure user-data).

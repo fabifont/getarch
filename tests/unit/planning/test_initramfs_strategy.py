@@ -41,9 +41,7 @@ def test_dracut_writes_conf_and_runs_regenerate() -> None:
     argvs = [c.argv for c in cmds]
     assert ("dracut", "--regenerate-all", "--force") in argvs
     flat = "".join(c.input or "" for c in cmds)
-    assert "/mnt/etc/dracut.conf.d/10-getarch.conf" in " ".join(
-        arg for c in cmds for arg in c.argv
-    )
+    assert "/mnt/etc/dracut.conf.d/10-getarch.conf" in " ".join(arg for c in cmds for arg in c.argv)
     assert "hostonly=yes" in flat
 
 

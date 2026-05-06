@@ -1,7 +1,7 @@
 """Regression: dracut renders quirk-supplied kernel drivers via force_drivers.
 
-Codex P6 finding: ``DracutStrategy`` previously concatenated quirks
-into ``add_dracutmodules`` (the dracut module namespace). Quirks
+``DracutStrategy`` previously concatenated quirks into
+``add_dracutmodules`` (the dracut module namespace). Quirks
 contribute *kernel driver* names (e.g. ``tpm_tis``); pushing them
 into the dracut module list is a silent contract violation that can
 omit the early driver from the initramfs.
@@ -45,7 +45,7 @@ def test_dracut_quirk_modules_use_force_drivers_not_modules() -> None:
     ).commands()
     conf = cmds[0].input or ""
     # Quirk-supplied kernel drivers MUST land in force_drivers.
-    assert "force_drivers+=\" tpm_tis \"" in conf
+    assert 'force_drivers+=" tpm_tis "' in conf
     # And MUST NOT be smuggled into the dracut module list.
     add_modules_line = next(
         line for line in conf.splitlines() if line.startswith("add_dracutmodules+=")

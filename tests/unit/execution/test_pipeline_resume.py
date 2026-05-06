@@ -111,7 +111,9 @@ def test_pipeline_resume_strips_runtime_guards_from_initial_state(tmp_path: Path
             seen.append(self.id)
             del ctx
             return StepResult(
-                step_id=self.id, status=StepStatus.SUCCEEDED, commands=(),
+                step_id=self.id,
+                status=StepStatus.SUCCEEDED,
+                commands=(),
             )
 
     initial = PipelineState(
@@ -148,7 +150,9 @@ def test_pipeline_resume_skips_completed_steps(tmp_path: Path) -> None:
             seen.append(self.id)
             del ctx
             return StepResult(
-                step_id=self.id, status=StepStatus.SUCCEEDED, commands=(),
+                step_id=self.id,
+                status=StepStatus.SUCCEEDED,
+                commands=(),
             )
 
     pipeline = Pipeline(

@@ -76,9 +76,9 @@ def test_load_config_from_yml_extension(tmp_path: Path) -> None:
 def test_load_config_from_toml(tmp_path: Path) -> None:
     p = tmp_path / "c.toml"
     p.write_text(
-        'version = 1\n'
+        "version = 1\n"
         'packages = ["base","linux","linux-firmware"]\n'
-        'reboot = false\n'
+        "reboot = false\n"
         '[disk]\npath = "/dev/sda"\n'
         '[partitioning]\nlayout = "efi-root"\nefi_size_mib = 512\n'
         '[filesystem]\nkind = "ext4"\nlabel = "system"\n'
@@ -91,7 +91,7 @@ def test_load_config_from_toml(tmp_path: Path) -> None:
         '[locale]\nlang = "en_US.UTF-8"\nlocale = "en_US.UTF-8 UTF-8"\n'
         'keymap = "us"\ntimezone = "Europe/Rome"\n'
         '[network]\nhostname = "arch"\n'
-        '[services]\nenable = []\ntimers = []\n'
+        "[services]\nenable = []\ntimers = []\n"
         '[mirrors]\nstrategy = "keep"\n'
         '[users.root]\nkind = "prompt"\n',
     )

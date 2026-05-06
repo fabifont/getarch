@@ -106,7 +106,8 @@ def test_cli_migrate_writes_to_stdout(tmp_path: Path) -> None:
     src = tmp_path / "c.json"
     src.write_text(json.dumps(_v1_payload()), encoding="utf-8")
     result = CliRunner().invoke(
-        app, ["migrate", str(src), "--to", "2"],
+        app,
+        ["migrate", str(src), "--to", "2"],
     )
     assert result.exit_code == 0
     parsed = json.loads(result.output)
@@ -118,7 +119,8 @@ def test_cli_migrate_writes_to_output_file(tmp_path: Path) -> None:
     out = tmp_path / "out.json"
     src.write_text(json.dumps(_v1_payload()), encoding="utf-8")
     result = CliRunner().invoke(
-        app, ["migrate", str(src), "--to", "2", "--output", str(out)],
+        app,
+        ["migrate", str(src), "--to", "2", "--output", str(out)],
     )
     assert result.exit_code == 0
     assert out.is_file()

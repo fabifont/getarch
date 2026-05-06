@@ -142,6 +142,4 @@ def test_planner_invariants(combo: dict[str, object]) -> None:
     # phase enum's declaration order.
     phase_order = list(StepPhase)
     indices = [phase_order.index(s.phase) for s in plan.steps]
-    assert indices == sorted(indices), (
-        f"phases out of order: {[s.phase.value for s in plan.steps]}"
-    )
+    assert indices == sorted(indices), f"phases out of order: {[s.phase.value for s in plan.steps]}"

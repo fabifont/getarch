@@ -29,9 +29,7 @@ def _load_qemu_configs_module() -> Any:
 
 
 _MATRIX = [
-    (fs, bl)
-    for fs in ("ext4", "btrfs", "xfs", "f2fs")
-    for bl in ("systemd-boot", "grub", "uki")
+    (fs, bl) for fs in ("ext4", "btrfs", "xfs", "f2fs") for bl in ("systemd-boot", "grub", "uki")
 ]
 
 

@@ -92,19 +92,13 @@ def _check_home_layout(cfg: Config) -> None:
         return
     if "home" not in cfg.partitioning.layout:
         return
-    if (
-        cfg.partitioning.home_size_mib is None
-        and cfg.partitioning.root_size_mib is None
-    ):
+    if cfg.partitioning.home_size_mib is None and cfg.partitioning.root_size_mib is None:
         raise SemanticConfigError(
             f"partitioning.layout={cfg.partitioning.layout!r} requires either "
             "partitioning.home_size_mib (fixed home, rest-of-disk root) or "
             "partitioning.root_size_mib (fixed root, rest-of-disk home)",
         )
-    if (
-        cfg.partitioning.home_size_mib is not None
-        and cfg.partitioning.root_size_mib is not None
-    ):
+    if cfg.partitioning.home_size_mib is not None and cfg.partitioning.root_size_mib is not None:
         raise SemanticConfigError(
             "partitioning.home_size_mib and partitioning.root_size_mib are "
             "mutually exclusive (set exactly one for home layouts)",
@@ -135,9 +129,7 @@ def _check_mountpoints(cfg: Config) -> None:
     if cfg.partitioning.custom is not None:
         # Custom layouts replace the builtin reserved labels with the
         # user's chosen labels for non-extra roles.
-        reserved = frozenset(
-            p.label for p in cfg.partitioning.custom if p.role != "extra"
-        )
+        reserved = frozenset(p.label for p in cfg.partitioning.custom if p.role != "extra")
     else:
         reserved = _RESERVED_PARTLABELS
     for mp in cfg.mountpoints:
@@ -164,8 +156,7 @@ def _check_mountpoints(cfg: Config) -> None:
 def _check_firmware_bootloader(cfg: Config) -> None:
     if cfg.firmware == "bios" and cfg.bootloader.kind != "grub":
         raise SemanticConfigError(
-            f"firmware='bios' requires bootloader.kind='grub'; got "
-            f"{cfg.bootloader.kind!r}",
+            f"firmware='bios' requires bootloader.kind='grub'; got {cfg.bootloader.kind!r}",
         )
     if cfg.firmware == "container":
         # Container mode skips disk/encryption/bootloader entirely; reject
@@ -217,8 +208,7 @@ def _check_lvm_layout(cfg: Config) -> None:
                 "the LVM activation runs against the unlocked LUKS mapper)",
             )
     fs_kinds = {v.filesystem for v in cfg.partitioning.lvm.volumes}
-    pkg_for = {"ext4": "e2fsprogs", "btrfs": "btrfs-progs",
-               "xfs": "xfsprogs", "f2fs": "f2fs-tools"}
+    pkg_for = {"ext4": "e2fsprogs", "btrfs": "btrfs-progs", "xfs": "xfsprogs", "f2fs": "f2fs-tools"}
     needed = {pkg_for[k] for k in fs_kinds}
     missing = needed - set(cfg.packages)
     if missing:
@@ -254,8 +244,7 @@ def _check_detached_header(cfg: Config) -> None:
             # named the carrier something other than "cryptheader").
             if cfg.partitioning.custom is not None:
                 carrier_label = next(
-                    (p.label for p in cfg.partitioning.custom
-                     if p.role == "luksheader"),
+                    (p.label for p in cfg.partitioning.custom if p.role == "luksheader"),
                     "cryptheader",
                 )
             else:

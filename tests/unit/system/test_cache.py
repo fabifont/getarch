@@ -20,14 +20,16 @@ from getarch.system.cache import (
 
 
 def test_default_cache_dir_honours_xdg_cache_home(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "x"))
     assert default_cache_dir() == tmp_path / "x" / "getarch"
 
 
 def test_default_cache_dir_falls_back_to_home_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -86,10 +88,7 @@ def test_cache_does_not_escape_root(tmp_path: Path) -> None:
 
 def test_cacheable_prefixes_match_lsblk_argv() -> None:
     cmd = Command(argv=("lsblk", "-J", "-b"))
-    assert any(
-        len(p) <= len(cmd.argv) and cmd.argv[: len(p)] == p
-        for p in CACHEABLE_PREFIXES
-    )
+    assert any(len(p) <= len(cmd.argv) and cmd.argv[: len(p)] == p for p in CACHEABLE_PREFIXES)
 
 
 class _RecordingFake(FakeRunner):

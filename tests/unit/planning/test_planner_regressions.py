@@ -1,6 +1,4 @@
-"""Regression tests for the P5 codex adversarial review findings.
-
-Each finding got a fix; this module pins each behaviour:
+"""Planner regression tests pinning behaviours that previously regressed.
 
 * LVM-on-LUKS bootloader cmdline must `root=/dev/<vg>/<lv>` (not the
   LUKS mapper, which is the PV).
@@ -40,8 +38,18 @@ def _lvm_payload() -> dict[str, object]:
     payload["initramfs"] = {
         "generator": "mkinitcpio",
         "hooks": [
-            "base", "systemd", "autodetect", "modconf", "kms", "keyboard",
-            "sd-vconsole", "block", "sd-encrypt", "lvm2", "filesystems", "fsck",
+            "base",
+            "systemd",
+            "autodetect",
+            "modconf",
+            "kms",
+            "keyboard",
+            "sd-vconsole",
+            "block",
+            "sd-encrypt",
+            "lvm2",
+            "filesystems",
+            "fsck",
         ],
     }
     return payload
@@ -56,8 +64,10 @@ def test_lvm_bootloader_cmdline_uses_lv_not_mapper() -> None:
         mount_root=Path("/mnt"),
     )
     boot = next(s for s in plan.steps if s.id == "bootloader")
-    flat = " ".join(arg for c in boot.commands for arg in c.argv) + " " + " ".join(
-        c.input or "" for c in boot.commands
+    flat = (
+        " ".join(arg for c in boot.commands for arg in c.argv)
+        + " "
+        + " ".join(c.input or "" for c in boot.commands)
     )
     # Root must point at the LV, not the LUKS mapper (which is the PV).
     assert "root=/dev/vg0/rootfs" in flat
@@ -79,7 +89,9 @@ def test_custom_layout_encrypted_home_inserts_encryption_home_step() -> None:
     payload = deepcopy(EXAMPLES["encrypted-btrfs"])
     payload["filesystem"] = {"kind": "ext4", "label": "system"}
     payload["encryption"] = {
-        "kind": "luks2", "password": "x", "home_kind": "shared-key",
+        "kind": "luks2",
+        "password": "x",
+        "home_kind": "shared-key",
     }
     payload["partitioning"] = {
         "layout": "efi-root",
